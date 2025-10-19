@@ -2,6 +2,7 @@ import { Ionicons } from '@expo/vector-icons';
 import { Tabs } from 'expo-router';
 import React from 'react';
 
+import { CircularTabButton } from '@/components/circular-tab-button';
 import { HapticTab } from '@/components/haptic-tab';
 import { Colors } from '@/constants/theme';
 import { useColorScheme } from '@/hooks/use-color-scheme';
@@ -34,7 +35,9 @@ export default function TabLayout() {
         name="transactions"
         options={{
           title: 'Transactions',
-          tabBarIcon: ({ color }) => <Ionicons size={28} name="swap-horizontal-outline" color={color} />,
+          tabBarIcon: ({ color }) => <Ionicons size={28} name="swap-horizontal-outline" color="white" />,
+          tabBarButton: CircularTabButton,
+          tabBarLabel: () => null,
         }}
       />
       <Tabs.Screen
