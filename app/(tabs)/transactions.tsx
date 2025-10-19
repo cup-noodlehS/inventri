@@ -457,7 +457,7 @@ const styles = StyleSheet.create({
     borderRadius: 12,
     gap: 8,
     marginTop: 12,
-    borderWidth: 2,
+    borderWidth: 1,
   },
   scanButtonText: {
     fontSize: 16,

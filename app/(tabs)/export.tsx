@@ -145,7 +145,7 @@ const styles = StyleSheet.create({
     marginHorizontal: 16,
     marginBottom: 24,
     borderRadius: 12,
-    borderWidth: 2,
+    borderWidth: 1,
     borderColor: 'rgba(0,0,0,0.1)',
   },
   summaryHeader: {
@@ -215,7 +215,7 @@ const styles = StyleSheet.create({
     marginHorizontal: 16,
     marginBottom: 24,
     borderRadius: 12,
-    borderWidth: 2,
+    borderWidth: 1,
     borderColor: 'rgba(0,0,0,0.1)',
     gap: 12,
   },
