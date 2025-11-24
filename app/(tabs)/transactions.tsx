@@ -1,6 +1,6 @@
 import { Ionicons } from '@expo/vector-icons';
 import { useEffect, useState } from 'react';
-import { ScrollView, StyleSheet, TouchableOpacity, View } from 'react-native';
+import { ActivityIndicator, Alert, ScrollView, StyleSheet, TouchableOpacity, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { Tabs } from '@/components/tabs';
@@ -9,8 +9,8 @@ import { ThemedView } from '@/components/themed-view';
 import { useAuth } from '@/context/AuthContext';
 import { useThemeColor } from '@/hooks/use-theme-color';
 import { getProducts } from '@/lib/api/products';
-import { getRecentTransactions, TransactionWithItems } from '@/lib/api/transactions';
-import { CurrentStock } from '@/lib/types';
+import { createTransaction, getRecentTransactions, TransactionWithItems } from '@/lib/api/transactions';
+import { CreateTransactionInput, CurrentStock } from '@/lib/types';
 
 type TransactionType = 'Stock In' | 'Stock Out' | 'Adjustment';
 
@@ -85,22 +85,59 @@ export default function TransactionsScreen() {
   };
 
   const handleSave = async () => {
+    // Validation
     if (!selectedProduct) {
-      alert('Please select a product');
+      Alert.alert('Error', 'Please select a product');
       return;
     }
 
     if (!user) {
-      alert('You must be logged in to create transactions');
+      Alert.alert('Error', 'You must be logged in');
       return;
     }
 
-    const product = products.find(p => p.sku === selectedProduct);
-    if (!product) return;
+    setSubmitting(true);
 
-    // TODO: Implement transaction creation with createTransaction API
-    // This will be implemented in the next step
-    alert('Transaction save functionality will be implemented next');
+    try {
+      // Prepare transaction input
+      const input: CreateTransactionInput & { userId: string } = {
+        transaction_type: activeTab,
+        reference: `TXN-${Date.now()}`,
+        notes: '',
+        userId: user.id,
+        items: [
+          {
+            sku: selectedProduct,
+            quantity: activeTab === 'Stock Out' ? -quantity : quantity,
+          },
+        ],
+      };
+
+      // Call API
+      const { data, error } = await createTransaction(input);
+
+      if (error) {
+        const errorMessage = error?.message || error?.toString() || 'Failed to save transaction';
+        Alert.alert('Error', errorMessage);
+        return;
+      }
+
+      // Success
+      Alert.alert('Success', 'Transaction saved successfully!');
+
+      // Reset form
+      setSelectedProduct(null);
+      setQuantity(1);
+      setDate(new Date());
+
+      // Refresh transactions list
+      fetchTransactions();
+    } catch (err) {
+      console.error('Transaction error:', err);
+      Alert.alert('Error', 'Something went wrong');
+    } finally {
+      setSubmitting(false);
+    }
   };
 
   const getTransactionIcon = (type: TransactionType) => {
@@ -276,11 +313,22 @@ export default function TransactionsScreen() {
 
           {/* Save Button */}
           <TouchableOpacity
-            style={[styles.saveButton, { backgroundColor: getTransactionColor(activeTab) }]}
+            style={[
+              styles.saveButton,
+              { backgroundColor: getTransactionColor(activeTab) },
+              submitting && styles.saveButtonDisabled,
+            ]}
             onPress={handleSave}
+            disabled={submitting}
           >
-            <Ionicons name="checkmark-circle-outline" size={24} color="#fff" />
-            <ThemedText style={styles.saveButtonText}>Save Transaction</ThemedText>
+            {submitting ? (
+              <ActivityIndicator size="small" color="#fff" />
+            ) : (
+              <Ionicons name="checkmark-circle-outline" size={24} color="#fff" />
+            )}
+            <ThemedText style={styles.saveButtonText}>
+              {submitting ? 'Saving...' : 'Save Transaction'}
+            </ThemedText>
           </TouchableOpacity>
 
           {/* Barcode Scan Button */}
@@ -501,6 +549,9 @@ const styles = StyleSheet.create({
     color: '#fff',
     fontSize: 16,
     fontWeight: '600',
+  },
+  saveButtonDisabled: {
+    opacity: 0.6,
   },
   scanButton: {
     flexDirection: 'row',
