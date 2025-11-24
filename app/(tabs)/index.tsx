@@ -1,13 +1,14 @@
 import { Ionicons } from '@expo/vector-icons';
+import { useEffect, useState } from 'react';
 import { Alert, RefreshControl, ScrollView, StyleSheet, TouchableOpacity, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { useEffect, useState } from 'react';
 
 import { ThemedText } from '@/components/themed-text';
 import { ThemedView } from '@/components/themed-view';
-import { getProducts } from '@/lib/api/products';
-import { CurrentStock } from '@/lib/types';
 import { useThemeColor } from '@/hooks/use-theme-color';
+import { getProducts } from '@/lib/api/products';
+import { supabase } from '@/lib/supabase';
+import { CurrentStock } from '@/lib/types';
 
 export default function HomeScreen() {
   const tintColor = useThemeColor({}, 'tint');
@@ -41,6 +42,24 @@ export default function HomeScreen() {
 
   useEffect(() => {
     fetchProducts();
+  }, []);
+
+  // Set up real-time subscription for inventory transactions
+  useEffect(() => {
+    const subscription = supabase
+      .channel('inventory-changes')
+      .on(
+        'postgres_changes',
+        { event: 'INSERT', schema: 'public', table: 'inventory_transaction' },
+        () => {
+          fetchProducts(); // Refresh data when new transaction is created
+        }
+      )
+      .subscribe();
+
+    return () => {
+      subscription.unsubscribe();
+    };
   }, []);
 
   const handleRefresh = async () => {

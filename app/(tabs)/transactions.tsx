@@ -3,6 +3,7 @@ import { useEffect, useState } from 'react';
 import { ActivityIndicator, Alert, ScrollView, StyleSheet, TouchableOpacity, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
+import { BarcodeScanner } from '@/components/BarcodeScanner';
 import { Tabs } from '@/components/tabs';
 import { ThemedText } from '@/components/themed-text';
 import { ThemedView } from '@/components/themed-view';
@@ -30,6 +31,7 @@ export default function TransactionsScreen() {
   const [loadingTransactions, setLoadingTransactions] = useState(true);
   const [submitting, setSubmitting] = useState(false);
   const [date, setDate] = useState(new Date());
+  const [showScanner, setShowScanner] = useState(false);
 
   useEffect(() => {
     fetchProducts();
@@ -81,6 +83,26 @@ export default function TransactionsScreen() {
       setQuantity(prev => prev + 1);
     } else {
       setQuantity(prev => Math.max(1, prev - 1));
+    }
+  };
+
+  const handleBarcodeScan = (barcode: string) => {
+    // Search for product with matching barcode_value
+    const product = products.find(
+      (p) => p.barcode_value && p.barcode_value.toLowerCase() === barcode.toLowerCase()
+    );
+
+    if (product) {
+      // Product found - set as selected
+      setSelectedProduct(product.sku);
+      setShowScanner(false);
+      Alert.alert('Success', `Product found: ${product.name}`);
+    } else {
+      // Product not found
+      Alert.alert(
+        'Product Not Found',
+        `No product found with barcode: ${barcode}. Please check the barcode or add the product first.`
+      );
     }
   };
 
@@ -334,7 +356,7 @@ export default function TransactionsScreen() {
           {/* Barcode Scan Button */}
           <TouchableOpacity
             style={[styles.scanButton, { borderColor: tintColor }]}
-            onPress={() => {/* TODO: Implement barcode scan */}}
+            onPress={() => setShowScanner(true)}
           >
             <Ionicons name="barcode-outline" size={24} color={tintColor} />
             <ThemedText style={[styles.scanButtonText, { color: tintColor }]}>
@@ -415,6 +437,13 @@ export default function TransactionsScreen() {
           </View>
         )}
       </ScrollView>
+
+      {/* Barcode Scanner */}
+      <BarcodeScanner
+        visible={showScanner}
+        onClose={() => setShowScanner(false)}
+        onScan={handleBarcodeScan}
+      />
     </ThemedView>
   );
 }

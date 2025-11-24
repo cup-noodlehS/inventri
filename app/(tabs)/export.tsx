@@ -147,6 +147,7 @@ const styles = StyleSheet.create({
     borderRadius: 12,
     borderWidth: 1,
     borderColor: 'rgba(0,0,0,0.1)',
+
   },
   summaryHeader: {
     flexDirection: 'row',
@@ -226,3 +227,4 @@ const styles = StyleSheet.create({
     flex: 1,
   },
 });
+
