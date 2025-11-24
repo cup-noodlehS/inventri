@@ -1,26 +1,80 @@
 import { Ionicons } from '@expo/vector-icons';
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { ScrollView, StyleSheet, TouchableOpacity, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { Tabs } from '@/components/tabs';
 import { ThemedText } from '@/components/themed-text';
 import { ThemedView } from '@/components/themed-view';
-import { products } from '@/data/products';
-import { transactions as initialTransactions, TransactionType } from '@/data/transactions';
+import { useAuth } from '@/context/AuthContext';
 import { useThemeColor } from '@/hooks/use-theme-color';
+import { getProducts } from '@/lib/api/products';
+import { getRecentTransactions, TransactionWithItems } from '@/lib/api/transactions';
+import { CurrentStock } from '@/lib/types';
+
+type TransactionType = 'Stock In' | 'Stock Out' | 'Adjustment';
 
 export default function TransactionsScreen() {
   const insets = useSafeAreaInsets();
   const tintColor = useThemeColor({}, 'tint');
   const backgroundColor = useThemeColor({}, 'background');
+  const { user } = useAuth();
   
   const [activeTab, setActiveTab] = useState<TransactionType>('Stock In');
-  const [selectedProduct, setSelectedProduct] = useState<number | null>(null);
+  const [selectedProduct, setSelectedProduct] = useState<string | null>(null);
   const [quantity, setQuantity] = useState(1);
   const [showProductPicker, setShowProductPicker] = useState(false);
-  const [transactions, setTransactions] = useState(initialTransactions);
+  const [transactions, setTransactions] = useState<TransactionWithItems[]>([]);
+  const [products, setProducts] = useState<CurrentStock[]>([]);
+  const [loadingProducts, setLoadingProducts] = useState(true);
+  const [loadingTransactions, setLoadingTransactions] = useState(true);
+  const [submitting, setSubmitting] = useState(false);
   const [date, setDate] = useState(new Date());
+
+  useEffect(() => {
+    fetchProducts();
+    fetchTransactions();
+  }, []);
+
+  const fetchProducts = async () => {
+    try {
+      setLoadingProducts(true);
+      const { data, error } = await getProducts();
+      
+      if (error) {
+        console.error('Error fetching products:', error);
+        return;
+      }
+      
+      if (data) {
+        setProducts(data);
+      }
+    } catch (error) {
+      console.error('Error in fetchProducts:', error);
+    } finally {
+      setLoadingProducts(false);
+    }
+  };
+
+  const fetchTransactions = async () => {
+    try {
+      setLoadingTransactions(true);
+      const { data, error } = await getRecentTransactions(20);
+      
+      if (error) {
+        console.error('Error fetching transactions:', error);
+        return;
+      }
+      
+      if (data) {
+        setTransactions(data);
+      }
+    } catch (error) {
+      console.error('Error in fetchTransactions:', error);
+    } finally {
+      setLoadingTransactions(false);
+    }
+  };
 
   const handleQuantityChange = (increment: boolean) => {
     if (increment) {
@@ -30,34 +84,23 @@ export default function TransactionsScreen() {
     }
   };
 
-  const handleSave = () => {
+  const handleSave = async () => {
     if (!selectedProduct) {
       alert('Please select a product');
       return;
     }
 
-    const product = products.find(p => p.id === selectedProduct);
+    if (!user) {
+      alert('You must be logged in to create transactions');
+      return;
+    }
+
+    const product = products.find(p => p.sku === selectedProduct);
     if (!product) return;
 
-    const newTransaction = {
-      id: transactions.length + 1,
-      productId: product.id,
-      productName: product.name,
-      productSku: product.sku,
-      type: activeTab,
-      quantity: activeTab === 'Stock Out' || activeTab === 'Adjustment' ? -quantity : quantity,
-      date: date,
-      notes: '',
-    };
-
-    setTransactions([newTransaction, ...transactions]);
-    
-    // Reset form
-    setSelectedProduct(null);
-    setQuantity(1);
-    setDate(new Date());
-    
-    alert('Transaction saved successfully!');
+    // TODO: Implement transaction creation with createTransaction API
+    // This will be implemented in the next step
+    alert('Transaction save functionality will be implemented next');
   };
 
   const getTransactionIcon = (type: TransactionType) => {
@@ -106,9 +149,7 @@ export default function TransactionsScreen() {
     });
   };
 
-  const selectedProductData = products.find(p => p.id === selectedProduct);
-
-  const filteredTransactions = transactions;
+  const selectedProductData = products.find(p => p.sku === selectedProduct);
 
   return (
     <ThemedView style={[styles.container, { paddingTop: insets.top }]}>
@@ -166,20 +207,20 @@ export default function TransactionsScreen() {
               <ThemedView style={[styles.productList, { backgroundColor }]}>
                 {products.map(product => (
                   <TouchableOpacity
-                    key={product.id}
+                    key={product.sku}
                     style={styles.productItem}
                     onPress={() => {
-                      setSelectedProduct(product.id);
+                      setSelectedProduct(product.sku);
                       setShowProductPicker(false);
                     }}
                   >
                     <View>
                       <ThemedText style={styles.productName}>{product.name}</ThemedText>
                       <ThemedText style={styles.productSku}>
-                        {product.sku} • Stock: {product.stock}
+                        {product.sku} • Stock: {product.quantity_on_hand}
                       </ThemedText>
                     </View>
-                    {selectedProduct === product.id && (
+                    {selectedProduct === product.sku && (
                       <Ionicons name="checkmark-circle" size={24} color={tintColor} />
                     )}
                   </TouchableOpacity>
@@ -262,7 +303,11 @@ export default function TransactionsScreen() {
           </ThemedText>
         </View>
 
-        {filteredTransactions.length === 0 ? (
+        {loadingTransactions ? (
+          <ThemedView style={[styles.emptyState, styles.card]}>
+            <ThemedText>Loading transactions...</ThemedText>
+          </ThemedView>
+        ) : transactions.length === 0 ? (
           <ThemedView style={[styles.emptyState, styles.card]}>
             <Ionicons name="document-text-outline" size={64} color="#9CA3AF" />
             <ThemedText style={styles.emptyText}>No transactions yet</ThemedText>
@@ -272,45 +317,53 @@ export default function TransactionsScreen() {
           </ThemedView>
         ) : (
           <View style={styles.historyList}>
-            {filteredTransactions.map((transaction) => (
-              <ThemedView key={transaction.id} style={[styles.transactionItem, styles.card]}>
-                <View style={styles.transactionLeft}>
-                  <View 
-                    style={[
-                      styles.transactionIcon, 
-                      { backgroundColor: getTransactionColor(transaction.type) + '20' }
-                    ]}
-                  >
-                    <Ionicons 
-                      name={getTransactionIcon(transaction.type)} 
-                      size={24} 
-                      color={getTransactionColor(transaction.type)} 
-                    />
+            {transactions.map((transaction) => {
+              const transactionDate = new Date(transaction.timestamp);
+              const firstItem = transaction.transaction_item?.[0];
+              const productName = firstItem ? products.find(p => p.sku === firstItem.sku)?.name || firstItem.sku : 'Unknown';
+              const totalQuantity = transaction.transaction_item?.reduce((sum, item) => sum + item.quantity, 0) || 0;
+              
+              return (
+                <ThemedView key={transaction.id} style={[styles.transactionItem, styles.card]}>
+                  <View style={styles.transactionLeft}>
+                    <View 
+                      style={[
+                        styles.transactionIcon, 
+                        { backgroundColor: getTransactionColor(transaction.transaction_type) + '20' }
+                      ]}
+                    >
+                      <Ionicons 
+                        name={getTransactionIcon(transaction.transaction_type)} 
+                        size={24} 
+                        color={getTransactionColor(transaction.transaction_type)} 
+                      />
+                    </View>
+                    <View style={styles.transactionInfo}>
+                      <ThemedText style={styles.transactionProduct}>
+                        {productName}
+                      </ThemedText>
+                      <ThemedText style={styles.transactionMeta}>
+                        {transaction.transaction_type}
+                        {transaction.reference && ` • ${transaction.reference}`}
+                      </ThemedText>
+                      <ThemedText style={styles.transactionDate}>
+                        {formatDate(transactionDate)} at {formatTime(transactionDate)}
+                      </ThemedText>
+                    </View>
                   </View>
-                  <View style={styles.transactionInfo}>
-                    <ThemedText style={styles.transactionProduct}>
-                      {transaction.productName}
-                    </ThemedText>
-                    <ThemedText style={styles.transactionMeta}>
-                      {transaction.productSku} • {transaction.type}
-                    </ThemedText>
-                    <ThemedText style={styles.transactionDate}>
-                      {formatDate(transaction.date)} at {formatTime(transaction.date)}
+                  <View style={styles.transactionRight}>
+                    <ThemedText 
+                      style={[
+                        styles.transactionQuantity,
+                        { color: getTransactionColor(transaction.transaction_type) }
+                      ]}
+                    >
+                      {totalQuantity > 0 ? '+' : ''}{totalQuantity}
                     </ThemedText>
                   </View>
-                </View>
-                <View style={styles.transactionRight}>
-                  <ThemedText 
-                    style={[
-                      styles.transactionQuantity,
-                      { color: getTransactionColor(transaction.type) }
-                    ]}
-                  >
-                    {transaction.quantity > 0 ? '+' : ''}{transaction.quantity}
-                  </ThemedText>
-                </View>
-              </ThemedView>
-            ))}
+                </ThemedView>
+              );
+            })}
           </View>
         )}
       </ScrollView>
