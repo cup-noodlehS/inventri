@@ -1,3 +1,4 @@
+import { createUserRecord, updateLastLogin, userRecordExists } from '@/lib/api/users';
 import { supabase } from '@/lib/supabase';
 import { User } from '@supabase/supabase-js';
 import React, { createContext, useContext, useEffect, useState } from 'react';
@@ -23,7 +24,6 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({
   const [loading, setLoading] = useState<boolean>(true);
 
   useEffect(() => {
-    // Check for existing session on mount
     const checkSession = async () => {
       try {
         const {
@@ -39,7 +39,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({
 
     checkSession();
 
-    // Set up auth state listener
+    // Listen for auth state changes (login/logout)
     const {
       data: { subscription },
     } = supabase.auth.onAuthStateChange((_event, session) => {
@@ -58,15 +58,37 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({
     metadata: { username: string; full_name: string }
   ): Promise<{ error: any }> => {
     try {
-      const { error } = await supabase.auth.signUp({
+      const { data: authData, error: authError } = await supabase.auth.signUp({
         email,
         password,
         options: {
           data: metadata,
         },
       });
-      return { error };
+
+      if (authError) {
+        return { error: authError };
+      }
+
+      // Create user record in our users table
+      // If email confirmation is enabled, user.id might be null - we'll create the record on first login
+      if (authData.user?.id) {
+        const { error: userError } = await createUserRecord(
+          authData.user.id,
+          metadata.username,
+          metadata.full_name,
+          3 // Default: Staff role
+        );
+
+        if (userError) {
+          console.error('Error creating user record:', userError);
+          // Non-blocking: user can still sign in, record will be created on first login
+        }
+      }
+
+      return { error: null };
     } catch (error) {
+      console.error('Signup error:', error);
       return { error };
     }
   };
@@ -76,12 +98,38 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({
     password: string
   ): Promise<{ error: any }> => {
     try {
-      const { error } = await supabase.auth.signInWithPassword({
+      const { data: authData, error } = await supabase.auth.signInWithPassword({
         email,
         password,
       });
-      return { error };
+
+      if (error) {
+        return { error };
+      }
+
+      if (authData.user?.id) {
+        // Handle legacy users: create record if missing, otherwise update login time
+        const { data: exists } = await userRecordExists(authData.user.id);
+        
+        if (!exists) {
+          // Backfill user record from auth metadata (for users created before this fix)
+          const metadata = authData.user.user_metadata;
+          if (metadata?.username && metadata?.full_name) {
+            await createUserRecord(
+              authData.user.id,
+              metadata.username,
+              metadata.full_name,
+              3
+            );
+          }
+        } else {
+          await updateLastLogin(authData.user.id);
+        }
+      }
+
+      return { error: null };
     } catch (error) {
+      console.error('Sign in error:', error);
       return { error };
     }
   };

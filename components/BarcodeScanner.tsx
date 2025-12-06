@@ -1,5 +1,4 @@
 import { Ionicons } from '@expo/vector-icons';
-import { BarCodeScanner, BarCodeScannerResult } from 'expo-barcode-scanner';
 import { useEffect, useState } from 'react';
 import {
     Alert,
@@ -12,6 +11,21 @@ import {
 import { ThemedText } from '@/components/themed-text';
 import { ThemedView } from '@/components/themed-view';
 import { useThemeColor } from '@/hooks/use-theme-color';
+
+// Try to import barcode scanner, but handle if native module isn't available
+let BarCodeScanner: any = null;
+let BarCodeScannerResult: any = null;
+let isBarcodeScannerAvailable = false;
+
+try {
+  const barcodeScannerModule = require('expo-barcode-scanner');
+  BarCodeScanner = barcodeScannerModule.BarCodeScanner;
+  BarCodeScannerResult = barcodeScannerModule.BarCodeScannerResult;
+  isBarcodeScannerAvailable = true;
+} catch (error) {
+  console.warn('expo-barcode-scanner native module not available. Barcode scanning will be disabled.');
+  isBarcodeScannerAvailable = false;
+}
 
 interface BarcodeScannerProps {
   visible: boolean;
@@ -30,29 +44,34 @@ export function BarcodeScanner({
 
   useEffect(() => {
     const getBarCodeScannerPermissions = async () => {
-      if (!visible) return;
+      if (!visible || !isBarcodeScannerAvailable || !BarCodeScanner) return;
 
-      const { status } = await BarCodeScanner.requestPermissionsAsync();
-      setHasPermission(status === 'granted');
+      try {
+        const { status } = await BarCodeScanner.requestPermissionsAsync();
+        setHasPermission(status === 'granted');
 
-      if (status !== 'granted') {
-        Alert.alert(
-          'Camera Permission Required',
-          'Please grant camera permission to scan barcodes.',
-          [
-            {
-              text: 'OK',
-              onPress: onClose,
-            },
-          ]
-        );
+        if (status !== 'granted') {
+          Alert.alert(
+            'Camera Permission Required',
+            'Please grant camera permission to scan barcodes.',
+            [
+              {
+                text: 'OK',
+                onPress: onClose,
+              },
+            ]
+          );
+        }
+      } catch (error) {
+        console.error('Error requesting barcode scanner permissions:', error);
+        setHasPermission(false);
       }
     };
 
     getBarCodeScannerPermissions();
-  }, [visible]);
+  }, [visible, onClose]);
 
-  const handleBarCodeScanned = ({ type, data }: BarCodeScannerResult) => {
+  const handleBarCodeScanned = ({ type, data }: any) => {
     if (scanned) return;
 
     setScanned(true);
@@ -66,6 +85,42 @@ export function BarcodeScanner({
 
   if (!visible) {
     return null;
+  }
+
+  // Show error if barcode scanner is not available
+  if (!isBarcodeScannerAvailable || !BarCodeScanner) {
+    return (
+      <Modal
+        visible={visible}
+        animationType="slide"
+        transparent={false}
+        onRequestClose={onClose}
+      >
+        <ThemedView style={styles.container}>
+          <View style={styles.header}>
+            <ThemedText type="title" style={styles.title}>
+              Scan Barcode
+            </ThemedText>
+            <TouchableOpacity
+              style={[styles.closeButton, { backgroundColor: tintColor }]}
+              onPress={onClose}
+            >
+              <Ionicons name="close" size={24} color="#fff" />
+            </TouchableOpacity>
+          </View>
+          <View style={styles.centerContent}>
+            <Ionicons name="barcode-outline" size={64} color="#9CA3AF" />
+            <ThemedText style={styles.errorText}>
+              Barcode Scanner Not Available
+            </ThemedText>
+            <ThemedText style={styles.errorSubtext}>
+              The barcode scanner requires a development build.{'\n'}
+              Please create a development build to use this feature.
+            </ThemedText>
+          </View>
+        </ThemedView>
+      </Modal>
+    );
   }
 
   return (
@@ -106,11 +161,13 @@ export function BarcodeScanner({
           </View>
         ) : (
           <View style={styles.cameraContainer}>
-            <BarCodeScanner
-              onBarCodeScanned={scanned ? undefined : handleBarCodeScanned}
-              style={styles.camera}
-              barCodeTypes={['code128', 'qr']}
-            />
+            {BarCodeScanner && (
+              <BarCodeScanner
+                onBarCodeScanned={scanned ? undefined : handleBarCodeScanned}
+                style={styles.camera}
+                barCodeTypes={['code128', 'qr']}
+              />
+            )}
 
             {/* Overlay */}
             <View style={styles.overlay}>

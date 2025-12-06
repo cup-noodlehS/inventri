@@ -28,10 +28,16 @@ export async function getProductBySku(sku: string): Promise<{
   error: any;
 }> {
   try {
+    if (!sku || typeof sku !== 'string' || sku.trim().length === 0) {
+      return { data: null, error: new Error('Invalid SKU') };
+    }
+
+    const sanitizedSku = sku.trim();
+
     const { data, error } = await supabase
       .from('current_stock')
       .select('*')
-      .eq('sku', sku)
+      .eq('sku', sanitizedSku)
       .single();
 
     if (error) {
@@ -51,10 +57,24 @@ export async function searchProducts(query: string): Promise<{
   error: any;
 }> {
   try {
+    if (!query || typeof query !== 'string') {
+      return { data: [], error: null };
+    }
+
+    const sanitizedQuery = query.trim();
+    
+    if (sanitizedQuery.length === 0) {
+      return { data: [], error: null };
+    }
+
+    // Search both name and SKU fields
+    // PostgREST handles parameterization automatically
+    const searchPattern = `%${sanitizedQuery}%`;
+    
     const { data, error } = await supabase
       .from('current_stock')
       .select('*')
-      .or(`name.ilike.%${query}%,sku.ilike.%${query}%`);
+      .or(`name.ilike.${searchPattern},sku.ilike.${searchPattern}`);
 
     if (error) {
       console.error('Error searching products:', error);
@@ -75,9 +95,30 @@ export async function createProduct(
   error: any;
 }> {
   try {
+    if (!product.sku || !product.name) {
+      return { data: null, error: new Error('SKU and name are required') };
+    }
+
+    if (typeof product.price !== 'number' || product.price < 0) {
+      return { data: null, error: new Error('Price must be a positive number') };
+    }
+
+    if (typeof product.min_stock_threshold !== 'number' || product.min_stock_threshold < 0) {
+      return { data: null, error: new Error('Min stock threshold must be a positive number') };
+    }
+
+    // Normalize SKU to uppercase, trim all strings
+    const sanitizedProduct = {
+      ...product,
+      sku: product.sku.trim().toUpperCase(),
+      name: product.name.trim(),
+      description: product.description?.trim() || null,
+      barcode_value: product.barcode_value?.trim() || null,
+    };
+
     const { data, error } = await supabase
       .from('product')
-      .insert(product)
+      .insert(sanitizedProduct)
       .select()
       .single();
 
@@ -101,10 +142,46 @@ export async function updateProduct(
   error: any;
 }> {
   try {
+    if (!sku || typeof sku !== 'string' || sku.trim().length === 0) {
+      return { data: null, error: new Error('Invalid SKU') };
+    }
+
+    if (updates.price !== undefined && (typeof updates.price !== 'number' || updates.price < 0)) {
+      return { data: null, error: new Error('Price must be a positive number') };
+    }
+
+    if (updates.min_stock_threshold !== undefined && 
+        (typeof updates.min_stock_threshold !== 'number' || updates.min_stock_threshold < 0)) {
+      return { data: null, error: new Error('Min stock threshold must be a positive number') };
+    }
+
+    // Normalize string fields
+    const sanitizedUpdates: Partial<Product> = {
+      ...updates,
+    };
+
+    if (updates.name !== undefined) {
+      sanitizedUpdates.name = updates.name.trim();
+    }
+
+    if (updates.sku !== undefined) {
+      sanitizedUpdates.sku = updates.sku.trim().toUpperCase();
+    }
+
+    if (updates.description !== undefined) {
+      sanitizedUpdates.description = updates.description?.trim() || null;
+    }
+
+    if (updates.barcode_value !== undefined) {
+      sanitizedUpdates.barcode_value = updates.barcode_value?.trim() || null;
+    }
+
+    const sanitizedSku = sku.trim().toUpperCase();
+
     const { data, error } = await supabase
       .from('product')
-      .update(updates)
-      .eq('sku', sku)
+      .update(sanitizedUpdates)
+      .eq('sku', sanitizedSku)
       .select()
       .single();
 
@@ -125,7 +202,13 @@ export async function deleteProduct(sku: string): Promise<{
   error: any;
 }> {
   try {
-    const { error } = await supabase.from('product').delete().eq('sku', sku);
+    if (!sku || typeof sku !== 'string' || sku.trim().length === 0) {
+      return { data: false, error: new Error('Invalid SKU') };
+    }
+
+    const sanitizedSku = sku.trim().toUpperCase();
+
+    const { error } = await supabase.from('product').delete().eq('sku', sanitizedSku);
 
     if (error) {
       console.error('Error deleting product:', error);

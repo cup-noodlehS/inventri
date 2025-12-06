@@ -16,14 +16,38 @@ export async function createTransaction(
   error: any;
 }> {
   try {
-    // Step 1: Create the transaction
+    if (!input.userId || typeof input.userId !== 'string') {
+      return { data: null, error: new Error('Valid user ID is required') };
+    }
+
+    if (!input.items || !Array.isArray(input.items) || input.items.length === 0) {
+      return { data: null, error: new Error('At least one transaction item is required') };
+    }
+
+    if (!['Stock In', 'Stock Out', 'Adjustment'].includes(input.transaction_type)) {
+      return { data: null, error: new Error('Invalid transaction type') };
+    }
+
+    // Validate all items before processing
+    for (const item of input.items) {
+      if (!item.sku || typeof item.sku !== 'string' || item.sku.trim().length === 0) {
+        return { data: null, error: new Error('Valid SKU is required for all items') };
+      }
+
+      if (typeof item.quantity !== 'number' || item.quantity === 0) {
+        return { data: null, error: new Error('Valid quantity is required for all items') };
+      }
+    }
+
+    const sanitizedReference = input.reference?.trim() || null;
+    const sanitizedNotes = input.notes?.trim() || null;
     const { data: transaction, error: transError } = await supabase
       .from('inventory_transaction')
       .insert({
         transaction_type: input.transaction_type,
-        reference: input.reference,
+        reference: sanitizedReference,
         performed_by: input.userId,
-        notes: input.notes,
+        notes: sanitizedNotes,
       })
       .select()
       .single();
@@ -33,45 +57,42 @@ export async function createTransaction(
       return { data: null, error: transError };
     }
 
-    // Step 2: Create transaction items
     const transactionItems: TransactionItem[] = [];
 
     for (const item of input.items) {
-      // Get product price
+      const sanitizedSku = item.sku.trim().toUpperCase();
+
+      // Fetch current product price for historical accuracy
       const { data: product, error: productError } = await supabase
         .from('product')
         .select('price')
-        .eq('sku', item.sku)
+        .eq('sku', sanitizedSku)
         .single();
 
       if (productError || !product) {
-        console.error(`Error fetching product ${item.sku}:`, productError);
-        // Rollback transaction by deleting it
+        console.error(`Error fetching product ${sanitizedSku}:`, productError);
+        // Rollback: delete the transaction if product lookup fails
         await supabase
           .from('inventory_transaction')
           .delete()
           .eq('id', transaction.id);
-        return { data: null, error: productError || new Error('Product not found') };
+        return { data: null, error: productError || new Error(`Product not found: ${sanitizedSku}`) };
       }
 
-      // Calculate quantity based on transaction type
+      // Normalize quantity: Stock Out becomes negative, Stock In positive, Adjustment stays as-is
       let quantity = item.quantity;
       if (input.transaction_type === 'Stock Out') {
         quantity = -Math.abs(item.quantity);
       } else if (input.transaction_type === 'Stock In') {
         quantity = Math.abs(item.quantity);
       }
-      // For Adjustment, use quantity as-is (can be positive or negative)
 
-      // Calculate total amount
       const totalAmount = quantity * product.price;
-
-      // Insert transaction item
       const { data: transactionItem, error: itemError } = await supabase
         .from('transaction_item')
         .insert({
           transaction_id: transaction.id,
-          sku: item.sku,
+          sku: sanitizedSku,
           quantity: quantity,
           unit_price_at_transaction: product.price,
           total_amount: totalAmount,
@@ -81,7 +102,7 @@ export async function createTransaction(
 
       if (itemError || !transactionItem) {
         console.error('Error creating transaction item:', itemError);
-        // Rollback transaction and items
+        // Rollback: clean up items and transaction
         await supabase
           .from('transaction_item')
           .delete()
@@ -96,7 +117,6 @@ export async function createTransaction(
       transactionItems.push(transactionItem);
     }
 
-    // Return transaction with items
     return {
       data: {
         ...transaction,
@@ -118,11 +138,15 @@ export async function getTransactions(
   error: any;
 }> {
   try {
+    // Prevent excessive queries
+    const validatedLimit = Math.max(1, Math.min(100, limit));
+    const validatedOffset = Math.max(0, offset);
+
     const { data, error } = await supabase
       .from('inventory_transaction')
       .select('*, transaction_item(*)')
       .order('timestamp', { ascending: false })
-      .range(offset, offset + limit - 1);
+      .range(validatedOffset, validatedOffset + validatedLimit - 1);
 
     if (error) {
       console.error('Error fetching transactions:', error);
@@ -143,6 +167,10 @@ export async function getTransactionById(
   error: any;
 }> {
   try {
+    if (!id || typeof id !== 'number' || id <= 0 || !Number.isInteger(id)) {
+      return { data: null, error: new Error('Invalid transaction ID') };
+    }
+
     const { data, error } = await supabase
       .from('inventory_transaction')
       .select('*, transaction_item(*)')
@@ -168,11 +196,13 @@ export async function getRecentTransactions(
   error: any;
 }> {
   try {
+    const validatedLimit = Math.max(1, Math.min(100, limit));
+
     const { data, error } = await supabase
       .from('inventory_transaction')
       .select('*, transaction_item(*)')
       .order('timestamp', { ascending: false })
-      .limit(limit);
+      .limit(validatedLimit);
 
     if (error) {
       console.error('Error fetching recent transactions:', error);
