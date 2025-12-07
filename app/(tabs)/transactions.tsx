@@ -1,26 +1,82 @@
 import { Ionicons } from '@expo/vector-icons';
-import { useState } from 'react';
-import { ScrollView, StyleSheet, TouchableOpacity, View } from 'react-native';
+import { useEffect, useState } from 'react';
+import { ActivityIndicator, Alert, ScrollView, StyleSheet, TouchableOpacity, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
+import { BarcodeScanner } from '@/components/BarcodeScanner';
 import { Tabs } from '@/components/tabs';
 import { ThemedText } from '@/components/themed-text';
 import { ThemedView } from '@/components/themed-view';
-import { products } from '@/data/products';
-import { transactions as initialTransactions, TransactionType } from '@/data/transactions';
+import { useAuth } from '@/context/AuthContext';
 import { useThemeColor } from '@/hooks/use-theme-color';
+import { getProducts } from '@/lib/api/products';
+import { createTransaction, getRecentTransactions, TransactionWithItems } from '@/lib/api/transactions';
+import { CreateTransactionInput, CurrentStock } from '@/lib/types';
+
+type TransactionType = 'Stock In' | 'Stock Out' | 'Adjustment';
 
 export default function TransactionsScreen() {
   const insets = useSafeAreaInsets();
   const tintColor = useThemeColor({}, 'tint');
   const backgroundColor = useThemeColor({}, 'background');
+  const { user } = useAuth();
   
   const [activeTab, setActiveTab] = useState<TransactionType>('Stock In');
-  const [selectedProduct, setSelectedProduct] = useState<number | null>(null);
+  const [selectedProduct, setSelectedProduct] = useState<string | null>(null);
   const [quantity, setQuantity] = useState(1);
   const [showProductPicker, setShowProductPicker] = useState(false);
-  const [transactions, setTransactions] = useState(initialTransactions);
+  const [transactions, setTransactions] = useState<TransactionWithItems[]>([]);
+  const [products, setProducts] = useState<CurrentStock[]>([]);
+  const [loadingProducts, setLoadingProducts] = useState(true);
+  const [loadingTransactions, setLoadingTransactions] = useState(true);
+  const [submitting, setSubmitting] = useState(false);
   const [date, setDate] = useState(new Date());
+  const [showScanner, setShowScanner] = useState(false);
+
+  useEffect(() => {
+    fetchProducts();
+    fetchTransactions();
+  }, []);
+
+  const fetchProducts = async () => {
+    try {
+      setLoadingProducts(true);
+      const { data, error } = await getProducts();
+      
+      if (error) {
+        console.error('Error fetching products:', error);
+        return;
+      }
+      
+      if (data) {
+        setProducts(data);
+      }
+    } catch (error) {
+      console.error('Error in fetchProducts:', error);
+    } finally {
+      setLoadingProducts(false);
+    }
+  };
+
+  const fetchTransactions = async () => {
+    try {
+      setLoadingTransactions(true);
+      const { data, error } = await getRecentTransactions(20);
+      
+      if (error) {
+        console.error('Error fetching transactions:', error);
+        return;
+      }
+      
+      if (data) {
+        setTransactions(data);
+      }
+    } catch (error) {
+      console.error('Error in fetchTransactions:', error);
+    } finally {
+      setLoadingTransactions(false);
+    }
+  };
 
   const handleQuantityChange = (increment: boolean) => {
     if (increment) {
@@ -30,34 +86,80 @@ export default function TransactionsScreen() {
     }
   };
 
-  const handleSave = () => {
+  const handleBarcodeScan = (barcode: string) => {
+    // Search for product with matching barcode_value
+    const product = products.find(
+      (p) => p.barcode_value && p.barcode_value.toLowerCase() === barcode.toLowerCase()
+    );
+
+    if (product) {
+      // Product found - set as selected
+      setSelectedProduct(product.sku);
+      setShowScanner(false);
+      Alert.alert('Success', `Product found: ${product.name}`);
+    } else {
+      // Product not found
+      Alert.alert(
+        'Product Not Found',
+        `No product found with barcode: ${barcode}. Please check the barcode or add the product first.`
+      );
+    }
+  };
+
+  const handleSave = async () => {
+    // Validation
     if (!selectedProduct) {
-      alert('Please select a product');
+      Alert.alert('Error', 'Please select a product');
       return;
     }
 
-    const product = products.find(p => p.id === selectedProduct);
-    if (!product) return;
+    if (!user) {
+      Alert.alert('Error', 'You must be logged in');
+      return;
+    }
 
-    const newTransaction = {
-      id: transactions.length + 1,
-      productId: product.id,
-      productName: product.name,
-      productSku: product.sku,
-      type: activeTab,
-      quantity: activeTab === 'Stock Out' || activeTab === 'Adjustment' ? -quantity : quantity,
-      date: date,
-      notes: '',
-    };
+    setSubmitting(true);
 
-    setTransactions([newTransaction, ...transactions]);
-    
-    // Reset form
-    setSelectedProduct(null);
-    setQuantity(1);
-    setDate(new Date());
-    
-    alert('Transaction saved successfully!');
+    try {
+      // Prepare transaction input
+      const input: CreateTransactionInput & { userId: string } = {
+        transaction_type: activeTab,
+        reference: `TXN-${Date.now()}`,
+        notes: '',
+        userId: user.id,
+        items: [
+          {
+            sku: selectedProduct,
+            quantity: activeTab === 'Stock Out' ? -quantity : quantity,
+          },
+        ],
+      };
+
+      // Call API
+      const { data, error } = await createTransaction(input);
+
+      if (error) {
+        const errorMessage = error?.message || error?.toString() || 'Failed to save transaction';
+        Alert.alert('Error', errorMessage);
+        return;
+      }
+
+      // Success
+      Alert.alert('Success', 'Transaction saved successfully!');
+
+      // Reset form
+      setSelectedProduct(null);
+      setQuantity(1);
+      setDate(new Date());
+
+      // Refresh transactions list
+      fetchTransactions();
+    } catch (err) {
+      console.error('Transaction error:', err);
+      Alert.alert('Error', 'Something went wrong');
+    } finally {
+      setSubmitting(false);
+    }
   };
 
   const getTransactionIcon = (type: TransactionType) => {
@@ -106,9 +208,7 @@ export default function TransactionsScreen() {
     });
   };
 
-  const selectedProductData = products.find(p => p.id === selectedProduct);
-
-  const filteredTransactions = transactions;
+  const selectedProductData = products.find(p => p.sku === selectedProduct);
 
   return (
     <ThemedView style={[styles.container, { paddingTop: insets.top }]}>
@@ -166,20 +266,20 @@ export default function TransactionsScreen() {
               <ThemedView style={[styles.productList, { backgroundColor }]}>
                 {products.map(product => (
                   <TouchableOpacity
-                    key={product.id}
+                    key={product.sku}
                     style={styles.productItem}
                     onPress={() => {
-                      setSelectedProduct(product.id);
+                      setSelectedProduct(product.sku);
                       setShowProductPicker(false);
                     }}
                   >
                     <View>
                       <ThemedText style={styles.productName}>{product.name}</ThemedText>
                       <ThemedText style={styles.productSku}>
-                        {product.sku} • Stock: {product.stock}
+                        {product.sku} • Stock: {product.quantity_on_hand}
                       </ThemedText>
                     </View>
-                    {selectedProduct === product.id && (
+                    {selectedProduct === product.sku && (
                       <Ionicons name="checkmark-circle" size={24} color={tintColor} />
                     )}
                   </TouchableOpacity>
@@ -235,17 +335,28 @@ export default function TransactionsScreen() {
 
           {/* Save Button */}
           <TouchableOpacity
-            style={[styles.saveButton, { backgroundColor: getTransactionColor(activeTab) }]}
+            style={[
+              styles.saveButton,
+              { backgroundColor: getTransactionColor(activeTab) },
+              submitting && styles.saveButtonDisabled,
+            ]}
             onPress={handleSave}
+            disabled={submitting}
           >
-            <Ionicons name="checkmark-circle-outline" size={24} color="#fff" />
-            <ThemedText style={styles.saveButtonText}>Save Transaction</ThemedText>
+            {submitting ? (
+              <ActivityIndicator size="small" color="#fff" />
+            ) : (
+              <Ionicons name="checkmark-circle-outline" size={24} color="#fff" />
+            )}
+            <ThemedText style={styles.saveButtonText}>
+              {submitting ? 'Saving...' : 'Save Transaction'}
+            </ThemedText>
           </TouchableOpacity>
 
           {/* Barcode Scan Button */}
           <TouchableOpacity
             style={[styles.scanButton, { borderColor: tintColor }]}
-            onPress={() => {/* TODO: Implement barcode scan */}}
+            onPress={() => setShowScanner(true)}
           >
             <Ionicons name="barcode-outline" size={24} color={tintColor} />
             <ThemedText style={[styles.scanButtonText, { color: tintColor }]}>
@@ -262,7 +373,11 @@ export default function TransactionsScreen() {
           </ThemedText>
         </View>
 
-        {filteredTransactions.length === 0 ? (
+        {loadingTransactions ? (
+          <ThemedView style={[styles.emptyState, styles.card]}>
+            <ThemedText>Loading transactions...</ThemedText>
+          </ThemedView>
+        ) : transactions.length === 0 ? (
           <ThemedView style={[styles.emptyState, styles.card]}>
             <Ionicons name="document-text-outline" size={64} color="#9CA3AF" />
             <ThemedText style={styles.emptyText}>No transactions yet</ThemedText>
@@ -272,48 +387,63 @@ export default function TransactionsScreen() {
           </ThemedView>
         ) : (
           <View style={styles.historyList}>
-            {filteredTransactions.map((transaction) => (
-              <ThemedView key={transaction.id} style={[styles.transactionItem, styles.card]}>
-                <View style={styles.transactionLeft}>
-                  <View 
-                    style={[
-                      styles.transactionIcon, 
-                      { backgroundColor: getTransactionColor(transaction.type) + '20' }
-                    ]}
-                  >
-                    <Ionicons 
-                      name={getTransactionIcon(transaction.type)} 
-                      size={24} 
-                      color={getTransactionColor(transaction.type)} 
-                    />
+            {transactions.map((transaction) => {
+              const transactionDate = new Date(transaction.timestamp);
+              const firstItem = transaction.transaction_item?.[0];
+              const productName = firstItem ? products.find(p => p.sku === firstItem.sku)?.name || firstItem.sku : 'Unknown';
+              const totalQuantity = transaction.transaction_item?.reduce((sum, item) => sum + item.quantity, 0) || 0;
+              
+              return (
+                <ThemedView key={transaction.id} style={[styles.transactionItem, styles.card]}>
+                  <View style={styles.transactionLeft}>
+                    <View 
+                      style={[
+                        styles.transactionIcon, 
+                        { backgroundColor: getTransactionColor(transaction.transaction_type) + '20' }
+                      ]}
+                    >
+                      <Ionicons 
+                        name={getTransactionIcon(transaction.transaction_type)} 
+                        size={24} 
+                        color={getTransactionColor(transaction.transaction_type)} 
+                      />
+                    </View>
+                    <View style={styles.transactionInfo}>
+                      <ThemedText style={styles.transactionProduct}>
+                        {productName}
+                      </ThemedText>
+                      <ThemedText style={styles.transactionMeta}>
+                        {transaction.transaction_type}
+                        {transaction.reference && ` • ${transaction.reference}`}
+                      </ThemedText>
+                      <ThemedText style={styles.transactionDate}>
+                        {formatDate(transactionDate)} at {formatTime(transactionDate)}
+                      </ThemedText>
+                    </View>
                   </View>
-                  <View style={styles.transactionInfo}>
-                    <ThemedText style={styles.transactionProduct}>
-                      {transaction.productName}
-                    </ThemedText>
-                    <ThemedText style={styles.transactionMeta}>
-                      {transaction.productSku} • {transaction.type}
-                    </ThemedText>
-                    <ThemedText style={styles.transactionDate}>
-                      {formatDate(transaction.date)} at {formatTime(transaction.date)}
+                  <View style={styles.transactionRight}>
+                    <ThemedText 
+                      style={[
+                        styles.transactionQuantity,
+                        { color: getTransactionColor(transaction.transaction_type) }
+                      ]}
+                    >
+                      {totalQuantity > 0 ? '+' : ''}{totalQuantity}
                     </ThemedText>
                   </View>
-                </View>
-                <View style={styles.transactionRight}>
-                  <ThemedText 
-                    style={[
-                      styles.transactionQuantity,
-                      { color: getTransactionColor(transaction.type) }
-                    ]}
-                  >
-                    {transaction.quantity > 0 ? '+' : ''}{transaction.quantity}
-                  </ThemedText>
-                </View>
-              </ThemedView>
-            ))}
+                </ThemedView>
+              );
+            })}
           </View>
         )}
       </ScrollView>
+
+      {/* Barcode Scanner */}
+      <BarcodeScanner
+        visible={showScanner}
+        onClose={() => setShowScanner(false)}
+        onScan={handleBarcodeScan}
+      />
     </ThemedView>
   );
 }
@@ -448,6 +578,9 @@ const styles = StyleSheet.create({
     color: '#fff',
     fontSize: 16,
     fontWeight: '600',
+  },
+  saveButtonDisabled: {
+    opacity: 0.6,
   },
   scanButton: {
     flexDirection: 'row',

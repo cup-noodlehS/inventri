@@ -1,30 +1,96 @@
 import { Ionicons } from '@expo/vector-icons';
-import { useState } from 'react';
-import { FlatList, StyleSheet, TextInput, TouchableOpacity, View } from 'react-native';
+import { useCallback, useEffect, useState } from 'react';
+import { ActivityIndicator, FlatList, RefreshControl, StyleSheet, TextInput, TouchableOpacity, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
-import { Product } from '@/components/product-card';
 import { ThemedText } from '@/components/themed-text';
 import { ThemedView } from '@/components/themed-view';
-import { products as mockProducts } from '@/data/products';
 import { useThemeColor } from '@/hooks/use-theme-color';
+import { getProducts, searchProducts } from '@/lib/api/products';
+import { CurrentStock } from '@/lib/types';
 
 export default function ProductsScreen() {
   const insets = useSafeAreaInsets();
   const tintColor = useThemeColor({}, 'tint');
   const textColor = useThemeColor({}, 'text');
   
-  const [products] = useState<Product[]>(mockProducts);
+  const [products, setProducts] = useState<CurrentStock[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [refreshing, setRefreshing] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
   const [selectedCategory, setSelectedCategory] = useState<string>('All');
+  const [searchTimeout, setSearchTimeout] = useState<number | null>(null);
 
-  const categories = ['All', ...new Set(products.map(p => p.category))];
+  const fetchProducts = async () => {
+    try {
+      setLoading(true);
+      const { data, error } = await getProducts();
+      
+      if (error) {
+        console.error('Error fetching products:', error);
+        return;
+      }
+      
+      if (data) {
+        setProducts(data);
+      }
+    } catch (error) {
+      console.error('Error in fetchProducts:', error);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleSearch = useCallback(async (query: string) => {
+    if (searchTimeout) {
+      clearTimeout(searchTimeout);
+    }
+
+    const timeout = setTimeout(async () => {
+      if (query.trim() === '') {
+        await fetchProducts();
+        return;
+      }
+
+      try {
+        setLoading(true);
+        const { data, error } = await searchProducts(query);
+        
+        if (error) {
+          console.error('Error searching products:', error);
+          return;
+        }
+        
+        if (data) {
+          setProducts(data);
+        }
+      } catch (error) {
+        console.error('Error in handleSearch:', error);
+      } finally {
+        setLoading(false);
+      }
+    }, 500);
+
+    setSearchTimeout(timeout);
+  }, [searchTimeout]);
+
+  useEffect(() => {
+    fetchProducts();
+  }, []);
+
+  useEffect(() => {
+    return () => {
+      if (searchTimeout) {
+        clearTimeout(searchTimeout);
+      }
+    };
+  }, [searchTimeout]);
+
+  const categories = ['All', ...new Set(products.map(p => p.category_name || 'Uncategorized').filter(Boolean))];
 
   const filteredProducts = products.filter(product => {
-    const matchesSearch = product.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
-                         product.sku.toLowerCase().includes(searchQuery.toLowerCase());
-    const matchesCategory = selectedCategory === 'All' || product.category === selectedCategory;
-    return matchesSearch && matchesCategory;
+    const matchesCategory = selectedCategory === 'All' || (product.category_name || 'Uncategorized') === selectedCategory;
+    return matchesCategory;
   });
 
   const getCategoryColor = (category: string): string => {
@@ -36,8 +102,15 @@ export default function ProductsScreen() {
     return colors[category] || '#6B7280';
   };
 
-  const renderProductCard = ({ item }: { item: Product }) => {
-    const isLowStock = item.stock < item.lowStockThreshold;
+  const handleRefresh = async () => {
+    setRefreshing(true);
+    await fetchProducts();
+    setRefreshing(false);
+  };
+
+  const renderProductCard = ({ item }: { item: CurrentStock }) => {
+    const categoryName = item.category_name || 'Uncategorized';
+    const isLowStock = item.quantity_on_hand < item.min_stock_threshold;
     
     return (
       <TouchableOpacity activeOpacity={0.7}>
@@ -47,9 +120,9 @@ export default function ProductsScreen() {
             <View style={styles.skuBadge}>
               <ThemedText style={styles.skuText}>{item.sku}</ThemedText>
             </View>
-            <View style={[styles.categoryBadge, { backgroundColor: getCategoryColor(item.category) + '20' }]}>
-              <ThemedText style={[styles.categoryText, { color: getCategoryColor(item.category) }]}>
-                {item.category}
+            <View style={[styles.categoryBadge, { backgroundColor: getCategoryColor(categoryName) + '20' }]}>
+              <ThemedText style={[styles.categoryText, { color: getCategoryColor(categoryName) }]}>
+                {categoryName}
               </ThemedText>
             </View>
           </View>
@@ -66,7 +139,7 @@ export default function ProductsScreen() {
                 color={isLowStock ? "#EF4444" : tintColor} 
               />
               <ThemedText style={[styles.stockText, isLowStock && styles.lowStockText]}>
-                {item.stock} in stock
+                {item.quantity_on_hand} in stock
               </ThemedText>
             </View>
             <ThemedText style={styles.priceText}>₱{item.price.toLocaleString()}</ThemedText>
@@ -105,10 +178,16 @@ export default function ProductsScreen() {
             placeholder="Search by name or SKU..."
             placeholderTextColor="#9CA3AF"
             value={searchQuery}
-            onChangeText={setSearchQuery}
+            onChangeText={(text) => {
+              setSearchQuery(text);
+              handleSearch(text);
+            }}
           />
           {searchQuery.length > 0 && (
-            <TouchableOpacity onPress={() => setSearchQuery('')}>
+            <TouchableOpacity onPress={() => {
+              setSearchQuery('');
+              fetchProducts();
+            }}>
               <Ionicons name="close-circle" size={20} color="#9CA3AF" />
             </TouchableOpacity>
           )}
@@ -151,22 +230,31 @@ export default function ProductsScreen() {
       </View>
 
       {/* Products List */}
-      <FlatList
-        data={filteredProducts}
-        renderItem={renderProductCard}
-        keyExtractor={item => item.id.toString()}
-        contentContainerStyle={styles.list}
-        showsVerticalScrollIndicator={false}
-        ListEmptyComponent={
-          <ThemedView style={[styles.emptyState, styles.card]}>
-            <Ionicons name="cube-outline" size={64} color="#9CA3AF" />
-            <ThemedText style={styles.emptyText}>No products found</ThemedText>
-            <ThemedText style={styles.emptySubtext}>
-              Try adjusting your search or filters
-            </ThemedText>
-          </ThemedView>
-        }
-      />
+      {loading && products.length === 0 ? (
+        <View style={styles.loadingContainer}>
+          <ActivityIndicator size="large" color={tintColor} />
+        </View>
+      ) : (
+        <FlatList
+          data={filteredProducts}
+          renderItem={renderProductCard}
+          keyExtractor={item => item.sku}
+          contentContainerStyle={styles.list}
+          showsVerticalScrollIndicator={false}
+          refreshControl={
+            <RefreshControl refreshing={refreshing} onRefresh={handleRefresh} />
+          }
+          ListEmptyComponent={
+            <ThemedView style={[styles.emptyState, styles.card]}>
+              <Ionicons name="cube-outline" size={64} color="#9CA3AF" />
+              <ThemedText style={styles.emptyText}>No products found</ThemedText>
+              <ThemedText style={styles.emptySubtext}>
+                Try adjusting your search or filters
+              </ThemedText>
+            </ThemedView>
+          }
+        />
+      )}
     </ThemedView>
   );
 }
@@ -336,5 +424,11 @@ const styles = StyleSheet.create({
     fontSize: 14,
     opacity: 0.6,
     textAlign: 'center',
+  },
+  loadingContainer: {
+    flex: 1,
+    justifyContent: 'center',
+    alignItems: 'center',
+    paddingVertical: 40,
   },
 });

@@ -1,34 +1,105 @@
 import { Ionicons } from '@expo/vector-icons';
-import { ScrollView, StyleSheet, TouchableOpacity, View } from 'react-native';
+import { useEffect, useState } from 'react';
+import { Alert, RefreshControl, ScrollView, StyleSheet, TouchableOpacity, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { ThemedText } from '@/components/themed-text';
 import { ThemedView } from '@/components/themed-view';
-import { products } from '@/data/products';
 import { useThemeColor } from '@/hooks/use-theme-color';
+import { getProducts } from '@/lib/api/products';
+import { supabase } from '@/lib/supabase';
+import { CurrentStock } from '@/lib/types';
 
 export default function HomeScreen() {
   const tintColor = useThemeColor({}, 'tint');
   const insets = useSafeAreaInsets();
   
-  const totalStock = products.reduce((sum, product) => sum + product.stock, 0);
-  const lowStockProducts = products.filter(product => product.stock < product.lowStockThreshold);
+  const [products, setProducts] = useState<CurrentStock[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [refreshing, setRefreshing] = useState(false);
+
+  const fetchProducts = async () => {
+    try {
+      setLoading(true);
+      const { data, error } = await getProducts();
+      
+      if (error) {
+        console.error('Error fetching products:', error);
+        Alert.alert('Error', 'Failed to load products. Please try again.');
+        return;
+      }
+      
+      if (data) {
+        setProducts(data);
+      }
+    } catch (error) {
+      console.error('Error in fetchProducts:', error);
+      Alert.alert('Error', 'An unexpected error occurred.');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  useEffect(() => {
+    fetchProducts();
+  }, []);
+
+  // Set up real-time subscription for inventory transactions
+  useEffect(() => {
+    const subscription = supabase
+      .channel('inventory-changes')
+      .on(
+        'postgres_changes',
+        { event: 'INSERT', schema: 'public', table: 'inventory_transaction' },
+        () => {
+          fetchProducts(); // Refresh data when new transaction is created
+        }
+      )
+      .subscribe();
+
+    return () => {
+      subscription.unsubscribe();
+    };
+  }, []);
+
+  const handleRefresh = async () => {
+    setRefreshing(true);
+    await fetchProducts();
+    setRefreshing(false);
+  };
+
+  if (loading) {
+    return (
+      <ThemedView style={styles.container}>
+        <ThemedText>Loading...</ThemedText>
+      </ThemedView>
+    );
+  }
+
+  const totalStock = products.reduce((sum, product) => sum + product.quantity_on_hand, 0);
+  const lowStockProducts = products.filter(product => product.quantity_on_hand < product.min_stock_threshold);
   const totalProducts = products.length;
-  const totalValue = products.reduce((sum, product) => sum + (product.stock * product.price), 0);
+  const totalValue = products.reduce((sum, product) => sum + (product.quantity_on_hand * product.price), 0);
   
   // Category breakdown
   const categoryStats = products.reduce((acc, product) => {
-    if (!acc[product.category]) {
-      acc[product.category] = { count: 0, stock: 0 };
+    const categoryName = product.category_name || 'Uncategorized';
+    if (!acc[categoryName]) {
+      acc[categoryName] = { count: 0, stock: 0 };
     }
-    acc[product.category].count += 1;
-    acc[product.category].stock += product.stock;
+    acc[categoryName].count += 1;
+    acc[categoryName].stock += product.quantity_on_hand;
     return acc;
   }, {} as Record<string, { count: number; stock: number }>);
 
   return (
     <ThemedView style={[styles.container, { paddingTop: insets.top }]}>
-      <ScrollView showsVerticalScrollIndicator={false}>
+      <ScrollView 
+        showsVerticalScrollIndicator={false}
+        refreshControl={
+          <RefreshControl refreshing={refreshing} onRefresh={handleRefresh} />
+        }
+      >
         {/* Header */}
         <View style={styles.header}>
           <ThemedText type="title" style={styles.title}>Dashboard</ThemedText>
@@ -84,14 +155,14 @@ export default function HomeScreen() {
               </ThemedText>
             </View>
             {lowStockProducts.map((product) => (
-              <View key={product.id} style={styles.alertItem}>
+              <View key={product.sku} style={styles.alertItem}>
                 <View style={styles.alertItemLeft}>
                   <ThemedText style={styles.productName}>{product.name}</ThemedText>
                   <ThemedText style={styles.productSku}>SKU: {product.sku}</ThemedText>
                 </View>
                 <View style={styles.alertItemRight}>
                   <View style={styles.stockBadge}>
-                    <ThemedText style={styles.stockBadgeText}>{product.stock} left</ThemedText>
+                    <ThemedText style={styles.stockBadgeText}>{product.quantity_on_hand} left</ThemedText>
                   </View>
                 </View>
               </View>

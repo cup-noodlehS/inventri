@@ -1,14 +1,39 @@
 import { Ionicons } from '@expo/vector-icons';
+import { router } from 'expo-router';
 import { Tabs } from 'expo-router';
-import React from 'react';
+import React, { useEffect } from 'react';
 
 import { CircularTabButton } from '@/components/circular-tab-button';
 import { HapticTab } from '@/components/haptic-tab';
+import { ThemedText } from '@/components/themed-text';
+import { ThemedView } from '@/components/themed-view';
+import { useAuth } from '@/context/AuthContext';
 import { Colors } from '@/constants/theme';
 import { useColorScheme } from '@/hooks/use-color-scheme';
 
 export default function TabLayout() {
   const colorScheme = useColorScheme();
+  const { user, loading } = useAuth();
+
+  useEffect(() => {
+    if (!loading && !user) {
+      router.replace('/auth/login');
+    }
+  }, [user, loading]);
+
+  // Show loading screen while checking auth
+  if (loading) {
+    return (
+      <ThemedView style={{ flex: 1, justifyContent: 'center', alignItems: 'center' }}>
+        <ThemedText>Loading...</ThemedText>
+      </ThemedView>
+    );
+  }
+
+  // If no user after loading, return null (redirect will happen)
+  if (!user) {
+    return null;
+  }
 
   return (
     <Tabs
