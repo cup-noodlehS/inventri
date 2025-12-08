@@ -1,42 +1,75 @@
-import { View, TouchableOpacity, StyleSheet } from 'react-native';
-import { ThemedText } from '@/components/themed-text';
+import { memo } from 'react';
+import { StyleSheet, TouchableOpacity, View } from 'react-native';
 
-export function Tabs({ tabs, activeTab, onTabPress }) {
+import { ThemedText } from '@/components/themed-text';
+import { Radii, Spacing } from '@/constants/theme';
+import { useThemeColor } from '@/hooks/use-theme-color';
+
+type TabsProps = {
+  tabs: string[];
+  activeTab: string;
+  onTabPress: (tab: string) => void;
+};
+
+function TabsComponent({ tabs, activeTab, onTabPress }: TabsProps) {
+  const frameColor = useThemeColor({}, 'surfaceAlt');
+  const borderColor = useThemeColor({}, 'border');
+  const activeTint = useThemeColor({}, 'tint');
+  const textMuted = useThemeColor({}, 'textMuted');
+  const surface = useThemeColor({}, 'surface');
+
   return (
-    <View style={styles.tabsContainer}>
-      {tabs.map(tab => (
-        <TouchableOpacity
-          key={tab}
-          style={[styles.tab, activeTab === tab && styles.activeTab]}
-          onPress={() => onTabPress(tab)}
-        >
-          <ThemedText style={[styles.tabText, activeTab === tab && styles.activeTabText]}>
-            {tab}
-          </ThemedText>
-        </TouchableOpacity>
-      ))}
+    <View style={[styles.tabsContainer, { backgroundColor: frameColor, borderColor }]}>
+      {tabs.map((tab) => {
+        const isActive = activeTab === tab;
+        return (
+          <TouchableOpacity
+            key={tab}
+            accessibilityRole="button"
+            accessibilityState={{ selected: isActive }}
+            style={[
+              styles.tab,
+              {
+                backgroundColor: isActive ? surface : 'transparent',
+                borderColor: isActive ? activeTint : 'transparent',
+              },
+            ]}
+            onPress={() => onTabPress(tab)}>
+            <ThemedText
+              style={[
+                styles.tabText,
+                {
+                  color: isActive ? activeTint : textMuted,
+                },
+              ]}>
+              {tab}
+            </ThemedText>
+          </TouchableOpacity>
+        );
+      })}
     </View>
   );
 }
 
+export const Tabs = memo(TabsComponent);
+
 const styles = StyleSheet.create({
   tabsContainer: {
     flexDirection: 'row',
-    justifyContent: 'space-around',
-    backgroundColor: '#eee',
+    justifyContent: 'space-between',
+    borderRadius: Radii.lg,
+    borderWidth: 1,
+    padding: Spacing.xs,
+    gap: Spacing.xs,
   },
   tab: {
-    paddingVertical: 10,
-    paddingHorizontal: 20,
-  },
-  activeTab: {
-    borderBottomWidth: 2,
-    borderBottomColor: '#6D28D9',
+    flex: 1,
+    paddingVertical: Spacing.sm,
+    borderRadius: Radii.md,
+    borderWidth: 1,
   },
   tabText: {
-    color: '#666',
-  },
-  activeTabText: {
-    color: '#6D28D9',
+    textAlign: 'center',
+    fontWeight: '600',
   },
 });

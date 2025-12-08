@@ -7,6 +7,7 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { ThemedText } from '@/components/themed-text';
 import { ThemedView } from '@/components/themed-view';
 import { useAuth } from '@/context/AuthContext';
+import { Radii, Spacing } from '@/constants/theme';
 import { useThemeColor } from '@/hooks/use-theme-color';
 
 export default function SettingsScreen() {
@@ -14,6 +15,11 @@ export default function SettingsScreen() {
   const insets = useSafeAreaInsets();
   const tintColor = useThemeColor({}, 'tint');
   const textColor = useThemeColor({}, 'text');
+  const surfaceColor = useThemeColor({}, 'surface');
+  const surfaceAlt = useThemeColor({}, 'surfaceAlt');
+  const borderColor = useThemeColor({}, 'border');
+  const mutedColor = useThemeColor({}, 'textMuted');
+  const dangerColor = useThemeColor({}, 'danger');
   const [barcodeType, setBarcodeType] = useState('Code128');
 
   const handleLogout = () => {
@@ -43,31 +49,34 @@ export default function SettingsScreen() {
   const userEmail = user?.email || 'N/A';
 
   return (
-    <ThemedView style={[styles.container, { paddingTop: insets.top }]}>
-      <ScrollView showsVerticalScrollIndicator={false}>
+    <ThemedView style={[styles.container, { paddingTop: insets.top + Spacing.md }]}>
+      <ScrollView
+        showsVerticalScrollIndicator={false}
+        contentContainerStyle={{ paddingBottom: Spacing.xxl }}
+      >
         {/* Header */}
         <View style={styles.header}>
           <ThemedText type="title" style={styles.title}>Settings</ThemedText>
         </View>
 
         {/* User Profile Section */}
-        <ThemedView style={[styles.profileCard, styles.card]}>
+        <ThemedView style={[styles.profileCard, styles.card, { backgroundColor: surfaceColor, borderColor }]}>
           <View style={styles.profileHeader}>
-            <View style={[styles.avatarContainer, { backgroundColor: tintColor + '20' }]}>
+            <View style={[styles.avatarContainer, { backgroundColor: `${tintColor}20` }]}>
               <Ionicons name="person" size={32} color={tintColor} />
             </View>
             <View style={styles.profileInfo}>
               <ThemedText type="subtitle" style={styles.profileName}>
                 {fullName}
               </ThemedText>
-              <ThemedText style={styles.profileUsername}>@{username}</ThemedText>
-              <ThemedText style={styles.profileEmail}>{userEmail}</ThemedText>
+              <ThemedText style={[styles.profileUsername, { color: mutedColor }]}>@{username}</ThemedText>
+              <ThemedText style={[styles.profileEmail, { color: mutedColor }]}>{userEmail}</ThemedText>
             </View>
           </View>
         </ThemedView>
 
         {/* Settings Section */}
-        <ThemedView style={[styles.settingsSection, styles.card]}>
+        <ThemedView style={[styles.settingsSection, styles.card, { backgroundColor: surfaceColor, borderColor }]}>
           <View style={styles.sectionHeader}>
             <Ionicons name="settings-outline" size={24} color={tintColor} />
             <ThemedText type="subtitle" style={styles.sectionTitle}>
@@ -78,28 +87,17 @@ export default function SettingsScreen() {
           <View style={styles.settingItem}>
             <ThemedText style={styles.settingLabel}>Minimum Stock Threshold</ThemedText>
             <TextInput 
-              style={[styles.input, { borderColor: tintColor + '40', color: textColor }]} 
+              style={[
+                styles.input,
+                {
+                  borderColor,
+                  color: textColor,
+                  backgroundColor: surfaceAlt,
+                },
+              ]} 
               keyboardType="numeric" 
               defaultValue="5" 
-              placeholderTextColor="#9CA3AF"
-            />
-          </View>
-
-          <View style={styles.settingItem}>
-            <ThemedText style={styles.settingLabel}>Business Name</ThemedText>
-            <TextInput 
-              style={[styles.input, { borderColor: tintColor + '40', color: textColor }]} 
-              defaultValue="My Perfume Shop" 
-              placeholderTextColor="#9CA3AF"
-            />
-          </View>
-
-          <View style={styles.settingItem}>
-            <ThemedText style={styles.settingLabel}>Contact Info</ThemedText>
-            <TextInput 
-              style={[styles.input, { borderColor: tintColor + '40', color: textColor }]} 
-              defaultValue="contact@perfumeshop.com" 
-              placeholderTextColor="#9CA3AF"
+              placeholderTextColor={mutedColor}
             />
           </View>
 
@@ -110,7 +108,7 @@ export default function SettingsScreen() {
               <Switch
                 value={barcodeType === 'QR'}
                 onValueChange={() => setBarcodeType(barcodeType === 'QR' ? 'Code128' : 'QR')}
-                trackColor={{ false: '#D1D5DB', true: tintColor }}
+                trackColor={{ false: borderColor, true: tintColor }}
                 thumbColor="#fff"
               />
               <ThemedText>QR</ThemedText>
@@ -120,11 +118,11 @@ export default function SettingsScreen() {
 
         {/* Logout Button */}
         <TouchableOpacity
-          style={[styles.logoutButton, { borderColor: '#EF4444' }]}
+          style={[styles.logoutButton, { borderColor: dangerColor }]}
           onPress={handleLogout}
         >
-          <Ionicons name="log-out-outline" size={24} color="#EF4444" />
-          <ThemedText style={[styles.logoutButtonText, { color: '#EF4444' }]}>
+          <Ionicons name="log-out-outline" size={24} color={dangerColor} />
+          <ThemedText style={[styles.logoutButtonText, { color: dangerColor }]}>
             Sign Out
           </ThemedText>
         </TouchableOpacity>
@@ -136,27 +134,26 @@ export default function SettingsScreen() {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    padding: 16,
+    paddingHorizontal: Spacing.lg,
   },
   header: {
-    marginBottom: 24,
+    marginBottom: Spacing.lg,
   },
   title: {
-    marginBottom: 4,
+    marginBottom: Spacing.xs,
   },
   card: {
-    borderRadius: 16,
+    borderRadius: Radii.lg,
     borderWidth: 1,
-    borderColor: 'rgba(0,0,0,0.1)',
   },
   profileCard: {
-    padding: 20,
-    marginBottom: 16,
+    padding: Spacing.lg,
+    marginBottom: Spacing.lg,
   },
   profileHeader: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 16,
+    gap: Spacing.md,
   },
   avatarContainer: {
     width: 64,
@@ -170,65 +167,60 @@ const styles = StyleSheet.create({
   },
   profileName: {
     fontSize: 20,
-    fontWeight: 'bold',
-    marginBottom: 4,
+    fontWeight: '700',
+    marginBottom: Spacing.xs / 2,
   },
   profileUsername: {
     fontSize: 14,
-    opacity: 0.7,
-    marginBottom: 2,
   },
   profileEmail: {
     fontSize: 12,
-    opacity: 0.5,
   },
   settingsSection: {
-    padding: 20,
-    marginBottom: 16,
+    padding: Spacing.lg,
+    marginBottom: Spacing.lg,
   },
   sectionHeader: {
     flexDirection: 'row',
     alignItems: 'center',
-    marginBottom: 20,
-    gap: 8,
+    gap: Spacing.sm,
+    marginBottom: Spacing.md,
   },
   sectionTitle: {
     fontSize: 18,
   },
   settingItem: {
-    marginBottom: 20,
+    marginBottom: Spacing.lg,
   },
   settingLabel: {
     fontSize: 14,
     fontWeight: '600',
-    marginBottom: 8,
-    opacity: 0.8,
+    marginBottom: Spacing.xs,
   },
   input: {
     height: 48,
-    borderWidth: 2,
-    borderRadius: 12,
-    marginTop: 4,
-    paddingHorizontal: 16,
+    borderWidth: 1,
+    borderRadius: Radii.md,
+    paddingHorizontal: Spacing.md,
     fontSize: 15,
   },
   switchContainer: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
-    marginTop: 8,
-    gap: 12,
+    marginTop: Spacing.xs,
+    gap: Spacing.sm,
   },
   logoutButton: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
-    padding: 16,
-    borderRadius: 12,
-    borderWidth: 2,
-    marginTop: 8,
-    marginBottom: 24,
-    gap: 8,
+    padding: Spacing.md,
+    borderRadius: Radii.md,
+    borderWidth: 1,
+    marginTop: Spacing.sm,
+    marginBottom: Spacing.lg,
+    gap: Spacing.sm,
   },
   logoutButtonText: {
     fontSize: 16,

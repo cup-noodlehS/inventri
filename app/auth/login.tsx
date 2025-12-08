@@ -174,7 +174,7 @@ export default function LoginScreen() {
 
             {/* Sign Up Link */}
             <View style={styles.signupContainer}>
-              <ThemedText style={styles.signupText}>Don't have an account? </ThemedText>
+              <ThemedText style={styles.signupText}>Don&apos;t have an account? </ThemedText>
               <TouchableOpacity
                 onPress={() => router.push('/auth/signup')}
                 disabled={loading}
@@ -305,4 +305,3 @@ const styles = StyleSheet.create({
     fontWeight: '600',
   },
 });
-

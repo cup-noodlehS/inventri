@@ -1,4 +1,5 @@
 import { Ionicons } from '@expo/vector-icons';
+import { useLocalSearchParams } from 'expo-router';
 import { useEffect, useState } from 'react';
 import { ActivityIndicator, Alert, ScrollView, StyleSheet, TouchableOpacity, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
@@ -8,6 +9,7 @@ import { Tabs } from '@/components/tabs';
 import { ThemedText } from '@/components/themed-text';
 import { ThemedView } from '@/components/themed-view';
 import { useAuth } from '@/context/AuthContext';
+import { Radii, Spacing } from '@/constants/theme';
 import { useThemeColor } from '@/hooks/use-theme-color';
 import { getProducts } from '@/lib/api/products';
 import { createTransaction, getRecentTransactions, TransactionWithItems } from '@/lib/api/transactions';
@@ -18,7 +20,14 @@ type TransactionType = 'Stock In' | 'Stock Out' | 'Adjustment';
 export default function TransactionsScreen() {
   const insets = useSafeAreaInsets();
   const tintColor = useThemeColor({}, 'tint');
-  const backgroundColor = useThemeColor({}, 'background');
+  const surfaceColor = useThemeColor({}, 'surface');
+  const surfaceAlt = useThemeColor({}, 'surfaceAlt');
+  const borderColor = useThemeColor({}, 'border');
+  const mutedColor = useThemeColor({}, 'textMuted');
+  const successColor = useThemeColor({}, 'success');
+  const dangerColor = useThemeColor({}, 'danger');
+  const warningColor = useThemeColor({}, 'warning');
+  const params = useLocalSearchParams<{ type?: string }>();
   const { user } = useAuth();
   
   const [activeTab, setActiveTab] = useState<TransactionType>('Stock In');
@@ -27,7 +36,6 @@ export default function TransactionsScreen() {
   const [showProductPicker, setShowProductPicker] = useState(false);
   const [transactions, setTransactions] = useState<TransactionWithItems[]>([]);
   const [products, setProducts] = useState<CurrentStock[]>([]);
-  const [loadingProducts, setLoadingProducts] = useState(true);
   const [loadingTransactions, setLoadingTransactions] = useState(true);
   const [submitting, setSubmitting] = useState(false);
   const [date, setDate] = useState(new Date());
@@ -38,9 +46,17 @@ export default function TransactionsScreen() {
     fetchTransactions();
   }, []);
 
+  useEffect(() => {
+    if (
+      params.type &&
+      ['Stock In', 'Stock Out', 'Adjustment'].includes(params.type as TransactionType)
+    ) {
+      setActiveTab(params.type as TransactionType);
+    }
+  }, [params.type]);
+
   const fetchProducts = async () => {
     try {
-      setLoadingProducts(true);
       const { data, error } = await getProducts();
       
       if (error) {
@@ -53,8 +69,6 @@ export default function TransactionsScreen() {
       }
     } catch (error) {
       console.error('Error in fetchProducts:', error);
-    } finally {
-      setLoadingProducts(false);
     }
   };
 
@@ -136,7 +150,7 @@ export default function TransactionsScreen() {
       };
 
       // Call API
-      const { data, error } = await createTransaction(input);
+      const { error } = await createTransaction(input);
 
       if (error) {
         const errorMessage = error?.message || error?.toString() || 'Failed to save transaction';
@@ -176,11 +190,12 @@ export default function TransactionsScreen() {
   const getTransactionColor = (type: TransactionType) => {
     switch (type) {
       case 'Stock In':
-        return '#10B981';
+        return successColor;
       case 'Stock Out':
-        return '#EF4444';
+        return dangerColor;
       case 'Adjustment':
-        return '#F59E0B';
+      default:
+        return warningColor;
     }
   };
 
@@ -211,11 +226,11 @@ export default function TransactionsScreen() {
   const selectedProductData = products.find(p => p.sku === selectedProduct);
 
   return (
-    <ThemedView style={[styles.container, { paddingTop: insets.top }]}>
+    <ThemedView style={[styles.container, { paddingTop: insets.top + Spacing.md }]}>
       {/* Header */}
       <View style={styles.header}>
         <ThemedText type="title" style={styles.title}>Transactions</ThemedText>
-        <ThemedText style={styles.subtitle}>Manage your inventory</ThemedText>
+        <ThemedText style={[styles.subtitle, { color: mutedColor }]}>Manage your inventory</ThemedText>
       </View>
 
       {/* Tabs */}
@@ -227,7 +242,15 @@ export default function TransactionsScreen() {
 
       <ScrollView style={styles.content} showsVerticalScrollIndicator={false}>
         {/* Transaction Form */}
-        <ThemedView style={[styles.formCard, styles.card]}>
+        <ThemedView
+          style={[
+            styles.formCard,
+            styles.card,
+            {
+              backgroundColor: surfaceColor,
+              borderColor,
+            },
+          ]}>
           <View style={styles.formHeader}>
             <Ionicons 
               name={getTransactionIcon(activeTab)} 
@@ -243,7 +266,13 @@ export default function TransactionsScreen() {
           <View style={styles.formGroup}>
             <ThemedText style={styles.label}>Product</ThemedText>
             <TouchableOpacity
-              style={[styles.picker, { borderColor: tintColor + '40' }]}
+              style={[
+                styles.picker,
+                {
+                  borderColor,
+                  backgroundColor: surfaceAlt,
+                },
+              ]}
               onPress={() => setShowProductPicker(!showProductPicker)}
             >
               <View style={styles.pickerContent}>
@@ -263,11 +292,11 @@ export default function TransactionsScreen() {
 
             {/* Product Dropdown */}
             {showProductPicker && (
-              <ThemedView style={[styles.productList, { backgroundColor }]}>
+              <ThemedView style={[styles.productList, { backgroundColor: surfaceColor, borderColor }]}>
                 {products.map(product => (
                   <TouchableOpacity
                     key={product.sku}
-                    style={styles.productItem}
+                    style={[styles.productItem, { borderColor }]}
                     onPress={() => {
                       setSelectedProduct(product.sku);
                       setShowProductPicker(false);
@@ -275,7 +304,7 @@ export default function TransactionsScreen() {
                   >
                     <View>
                       <ThemedText style={styles.productName}>{product.name}</ThemedText>
-                      <ThemedText style={styles.productSku}>
+                      <ThemedText style={[styles.productSku, { color: mutedColor }]}>
                         {product.sku} • Stock: {product.quantity_on_hand}
                       </ThemedText>
                     </View>
@@ -298,7 +327,7 @@ export default function TransactionsScreen() {
               >
                 <Ionicons name="remove" size={24} color="#fff" />
               </TouchableOpacity>
-              <ThemedView style={styles.quantityDisplay}>
+              <ThemedView style={[styles.quantityDisplay, { borderColor }]}>
                 <ThemedText style={styles.quantityText}>{quantity}</ThemedText>
               </ThemedView>
               <TouchableOpacity
@@ -314,7 +343,13 @@ export default function TransactionsScreen() {
           <View style={styles.formGroup}>
             <ThemedText style={styles.label}>Date & Time</ThemedText>
             <TouchableOpacity
-              style={[styles.picker, { borderColor: tintColor + '40' }]}
+              style={[
+                styles.picker,
+                {
+                  borderColor,
+                  backgroundColor: surfaceAlt,
+                },
+              ]}
               onPress={() => {/* TODO: Add date picker */}}
             >
               <View style={styles.pickerContent}>
@@ -355,7 +390,13 @@ export default function TransactionsScreen() {
 
           {/* Barcode Scan Button */}
           <TouchableOpacity
-            style={[styles.scanButton, { borderColor: tintColor }]}
+            style={[
+              styles.scanButton,
+              {
+                borderColor,
+                backgroundColor: surfaceAlt,
+              },
+            ]}
             onPress={() => setShowScanner(true)}
           >
             <Ionicons name="barcode-outline" size={24} color={tintColor} />
@@ -367,21 +408,21 @@ export default function TransactionsScreen() {
 
         {/* Transaction History */}
         <View style={styles.historyHeader}>
-          <Ionicons name="time-outline" size={24} color={tintColor} />
+          <Ionicons name="time-outline" size={22} color={tintColor} />
           <ThemedText type="subtitle" style={styles.historyTitle}>
             Transaction History
           </ThemedText>
         </View>
 
         {loadingTransactions ? (
-          <ThemedView style={[styles.emptyState, styles.card]}>
+          <ThemedView style={[styles.emptyState, styles.card, { backgroundColor: surfaceColor, borderColor }]}>
             <ThemedText>Loading transactions...</ThemedText>
           </ThemedView>
         ) : transactions.length === 0 ? (
-          <ThemedView style={[styles.emptyState, styles.card]}>
-            <Ionicons name="document-text-outline" size={64} color="#9CA3AF" />
+          <ThemedView style={[styles.emptyState, styles.card, { backgroundColor: surfaceColor, borderColor }]}>
+            <Ionicons name="document-text-outline" size={64} color={mutedColor} />
             <ThemedText style={styles.emptyText}>No transactions yet</ThemedText>
-            <ThemedText style={styles.emptySubtext}>
+            <ThemedText style={[styles.emptySubtext, { color: mutedColor }]}>
               Create your first transaction above
             </ThemedText>
           </ThemedView>
@@ -394,12 +435,18 @@ export default function TransactionsScreen() {
               const totalQuantity = transaction.transaction_item?.reduce((sum, item) => sum + item.quantity, 0) || 0;
               
               return (
-                <ThemedView key={transaction.id} style={[styles.transactionItem, styles.card]}>
+                <ThemedView
+                  key={transaction.id}
+                  style={[
+                    styles.transactionItem,
+                    styles.card,
+                    { backgroundColor: surfaceColor, borderColor },
+                  ]}>
                   <View style={styles.transactionLeft}>
                     <View 
                       style={[
                         styles.transactionIcon, 
-                        { backgroundColor: getTransactionColor(transaction.transaction_type) + '20' }
+                        { backgroundColor: `${getTransactionColor(transaction.transaction_type)}20` }
                       ]}
                     >
                       <Ionicons 
@@ -412,11 +459,11 @@ export default function TransactionsScreen() {
                       <ThemedText style={styles.transactionProduct}>
                         {productName}
                       </ThemedText>
-                      <ThemedText style={styles.transactionMeta}>
+                      <ThemedText style={[styles.transactionMeta, { color: mutedColor }]}>
                         {transaction.transaction_type}
                         {transaction.reference && ` • ${transaction.reference}`}
                       </ThemedText>
-                      <ThemedText style={styles.transactionDate}>
+                      <ThemedText style={[styles.transactionDate, { color: mutedColor }]}>
                         {formatDate(transactionDate)} at {formatTime(transactionDate)}
                       </ThemedText>
                     </View>
@@ -451,128 +498,116 @@ export default function TransactionsScreen() {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
+    paddingHorizontal: Spacing.lg,
   },
   header: {
-    paddingHorizontal: 16,
-    paddingTop: 16,
-    paddingBottom: 12,
+    marginBottom: Spacing.lg,
   },
   title: {
-    marginBottom: 4,
+    marginBottom: Spacing.xs,
   },
   subtitle: {
     fontSize: 14,
-    opacity: 0.6,
   },
   content: {
     flex: 1,
-    paddingHorizontal: 16,
   },
   card: {
-    borderRadius: 16,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.1,
-    shadowRadius: 8,
-    elevation: 3,
+    borderRadius: Radii.lg,
+    borderWidth: 1,
   },
   formCard: {
-    padding: 20,
-    marginTop: 16,
-    marginBottom: 24,
+    padding: Spacing.lg,
+    marginTop: Spacing.md,
+    marginBottom: Spacing.lg,
   },
   formHeader: {
     flexDirection: 'row',
     alignItems: 'center',
-    marginBottom: 20,
-    gap: 8,
+    marginBottom: Spacing.md,
+    gap: Spacing.sm,
   },
   formTitle: {
     fontSize: 18,
   },
   formGroup: {
-    marginBottom: 20,
+    marginBottom: Spacing.lg,
   },
   label: {
     fontSize: 14,
     fontWeight: '600',
-    marginBottom: 8,
-    opacity: 0.8,
+    marginBottom: Spacing.xs,
   },
   picker: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
-    padding: 16,
-    borderRadius: 12,
-    borderWidth: 2,
+    padding: Spacing.md,
+    borderRadius: Radii.md,
+    borderWidth: 1,
   },
   pickerContent: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 12,
+    gap: Spacing.sm,
     flex: 1,
   },
   pickerText: {
     fontSize: 15,
   },
   productList: {
-    marginTop: 8,
-    borderRadius: 12,
-    overflow: 'hidden',
+    marginTop: Spacing.xs,
+    borderRadius: Radii.md,
     borderWidth: 1,
-    borderColor: 'rgba(0,0,0,0.1)',
+    overflow: 'hidden',
   },
   productItem: {
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
-    padding: 16,
-    borderBottomWidth: 1,
-    borderBottomColor: 'rgba(0,0,0,0.05)',
+    padding: Spacing.md,
+    borderBottomWidth: StyleSheet.hairlineWidth,
   },
   productName: {
     fontSize: 15,
     fontWeight: '600',
-    marginBottom: 4,
+    marginBottom: Spacing.xs / 2,
   },
   productSku: {
     fontSize: 12,
-    opacity: 0.6,
   },
   stepper: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 12,
+    gap: Spacing.sm,
   },
   stepperButton: {
     width: 48,
     height: 48,
-    borderRadius: 12,
+    borderRadius: Radii.md,
     alignItems: 'center',
     justifyContent: 'center',
   },
   quantityDisplay: {
     flex: 1,
     height: 48,
-    borderRadius: 12,
+    borderRadius: Radii.md,
     alignItems: 'center',
     justifyContent: 'center',
-    borderWidth: 2,
-    borderColor: 'rgba(0,0,0,0.1)',
+    borderWidth: 1,
   },
   quantityText: {
     fontSize: 24,
-    fontWeight: 'bold',
+    fontWeight: '700',
   },
   saveButton: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
-    padding: 16,
-    borderRadius: 12,
-    gap: 8,
-    marginTop: 8,
+    padding: Spacing.md,
+    borderRadius: Radii.md,
+    gap: Spacing.sm,
+    marginTop: Spacing.xs,
   },
   saveButtonText: {
     color: '#fff',
@@ -586,10 +621,10 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
-    padding: 16,
-    borderRadius: 12,
-    gap: 8,
-    marginTop: 12,
+    padding: Spacing.md,
+    borderRadius: Radii.md,
+    gap: Spacing.sm,
+    marginTop: Spacing.sm,
     borderWidth: 1,
   },
   scanButtonText: {
@@ -599,48 +634,47 @@ const styles = StyleSheet.create({
   historyHeader: {
     flexDirection: 'row',
     alignItems: 'center',
-    marginBottom: 16,
-    gap: 8,
+    marginBottom: Spacing.md,
+    gap: Spacing.sm,
   },
   historyTitle: {
     fontSize: 18,
   },
   historyList: {
-    gap: 12,
-    marginBottom: 24,
+    gap: Spacing.sm,
+    marginBottom: Spacing.xxl,
   },
   emptyState: {
-    padding: 40,
+    padding: Spacing.xl,
     alignItems: 'center',
-    marginBottom: 24,
+    marginBottom: Spacing.lg,
   },
   emptyText: {
     fontSize: 18,
     fontWeight: '600',
-    marginTop: 16,
-    marginBottom: 4,
+    marginTop: Spacing.md,
+    marginBottom: Spacing.xs,
   },
   emptySubtext: {
     fontSize: 14,
-    opacity: 0.6,
     textAlign: 'center',
   },
   transactionItem: {
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
-    padding: 16,
+    padding: Spacing.md,
   },
   transactionLeft: {
     flexDirection: 'row',
     alignItems: 'center',
     flex: 1,
-    gap: 12,
+    gap: Spacing.sm,
   },
   transactionIcon: {
     width: 48,
     height: 48,
-    borderRadius: 12,
+    borderRadius: Radii.md,
     alignItems: 'center',
     justifyContent: 'center',
   },
@@ -650,22 +684,20 @@ const styles = StyleSheet.create({
   transactionProduct: {
     fontSize: 15,
     fontWeight: '600',
-    marginBottom: 4,
+    marginBottom: Spacing.xs / 2,
   },
   transactionMeta: {
     fontSize: 12,
-    opacity: 0.6,
-    marginBottom: 2,
+    marginBottom: Spacing.xs / 2,
   },
   transactionDate: {
     fontSize: 12,
-    opacity: 0.5,
   },
   transactionRight: {
     alignItems: 'flex-end',
   },
   transactionQuantity: {
     fontSize: 20,
-    fontWeight: 'bold',
+    fontWeight: '700',
   },
 });

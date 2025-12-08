@@ -1,19 +1,37 @@
 import { Ionicons } from '@expo/vector-icons';
-import { useEffect, useState } from 'react';
-import { Alert, RefreshControl, ScrollView, StyleSheet, TouchableOpacity, View } from 'react-native';
+import { router } from 'expo-router';
+import { useEffect, useMemo, useState } from 'react';
+import {
+  Alert,
+  RefreshControl,
+  ScrollView,
+  StyleSheet,
+  TouchableOpacity,
+  View,
+} from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { ThemedText } from '@/components/themed-text';
 import { ThemedView } from '@/components/themed-view';
+import { Radii, Spacing } from '@/constants/theme';
 import { useThemeColor } from '@/hooks/use-theme-color';
 import { getProducts } from '@/lib/api/products';
 import { supabase } from '@/lib/supabase';
 import { CurrentStock } from '@/lib/types';
 
+type TransactionShortcut = 'Stock In' | 'Stock Out' | 'Adjustment';
+
 export default function HomeScreen() {
   const tintColor = useThemeColor({}, 'tint');
+  const accent = useThemeColor({}, 'accent');
+  const success = useThemeColor({}, 'success');
+  const warning = useThemeColor({}, 'warning');
+  const danger = useThemeColor({}, 'danger');
+  const surface = useThemeColor({}, 'surface');
+  const borderColor = useThemeColor({}, 'border');
+  const mutedText = useThemeColor({}, 'textMuted');
   const insets = useSafeAreaInsets();
-  
+
   const [products, setProducts] = useState<CurrentStock[]>([]);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
@@ -22,13 +40,13 @@ export default function HomeScreen() {
     try {
       setLoading(true);
       const { data, error } = await getProducts();
-      
+
       if (error) {
         console.error('Error fetching products:', error);
         Alert.alert('Error', 'Failed to load products. Please try again.');
         return;
       }
-      
+
       if (data) {
         setProducts(data);
       }
@@ -44,7 +62,6 @@ export default function HomeScreen() {
     fetchProducts();
   }, []);
 
-  // Set up real-time subscription for inventory transactions
   useEffect(() => {
     const subscription = supabase
       .channel('inventory-changes')
@@ -52,7 +69,7 @@ export default function HomeScreen() {
         'postgres_changes',
         { event: 'INSERT', schema: 'public', table: 'inventory_transaction' },
         () => {
-          fetchProducts(); // Refresh data when new transaction is created
+          fetchProducts();
         }
       )
       .subscribe();
@@ -68,101 +85,126 @@ export default function HomeScreen() {
     setRefreshing(false);
   };
 
+  const handleQuickAction = (type: TransactionShortcut) => {
+    router.push({ pathname: '/(tabs)/transactions', params: { type } });
+  };
+
+  const dashboardStats = useMemo(() => {
+    const totalStock = products.reduce((sum, product) => sum + product.quantity_on_hand, 0);
+    const lowStockProducts = products.filter(
+      (product) => product.quantity_on_hand < product.min_stock_threshold
+    );
+    const totalProducts = products.length;
+    const totalValue = products.reduce(
+      (sum, product) => sum + product.quantity_on_hand * product.price,
+      0
+    );
+    const categoryStats = products.reduce((acc, product) => {
+      const categoryName = product.category_name || 'Uncategorized';
+      if (!acc[categoryName]) {
+        acc[categoryName] = { count: 0, stock: 0 };
+      }
+      acc[categoryName].count += 1;
+      acc[categoryName].stock += product.quantity_on_hand;
+      return acc;
+    }, {} as Record<string, { count: number; stock: number }>);
+
+    return { totalStock, lowStockProducts, totalProducts, totalValue, categoryStats };
+  }, [products]);
+
   if (loading) {
     return (
-      <ThemedView style={styles.container}>
+      <ThemedView style={[styles.container, { paddingTop: insets.top + Spacing.lg }]}>
         <ThemedText>Loading...</ThemedText>
       </ThemedView>
     );
   }
 
-  const totalStock = products.reduce((sum, product) => sum + product.quantity_on_hand, 0);
-  const lowStockProducts = products.filter(product => product.quantity_on_hand < product.min_stock_threshold);
-  const totalProducts = products.length;
-  const totalValue = products.reduce((sum, product) => sum + (product.quantity_on_hand * product.price), 0);
-  
-  // Category breakdown
-  const categoryStats = products.reduce((acc, product) => {
-    const categoryName = product.category_name || 'Uncategorized';
-    if (!acc[categoryName]) {
-      acc[categoryName] = { count: 0, stock: 0 };
-    }
-    acc[categoryName].count += 1;
-    acc[categoryName].stock += product.quantity_on_hand;
-    return acc;
-  }, {} as Record<string, { count: number; stock: number }>);
+  const { totalProducts, totalStock, totalValue, lowStockProducts, categoryStats } = dashboardStats;
 
   return (
-    <ThemedView style={[styles.container, { paddingTop: insets.top }]}>
-      <ScrollView 
+    <ThemedView style={[styles.container, { paddingTop: insets.top + Spacing.md }]}>
+      <ScrollView
         showsVerticalScrollIndicator={false}
-        refreshControl={
-          <RefreshControl refreshing={refreshing} onRefresh={handleRefresh} />
-        }
-      >
-        {/* Header */}
+        contentContainerStyle={{ paddingBottom: Spacing.xxl }}
+        refreshControl={<RefreshControl refreshing={refreshing} onRefresh={handleRefresh} />}>
         <View style={styles.header}>
-          <ThemedText type="title" style={styles.title}>Dashboard</ThemedText>
-          <ThemedText style={styles.subtitle}>Inventory Overview</ThemedText>
+          <ThemedText type="title" style={styles.title}>
+            Dashboard
+          </ThemedText>
+          <ThemedText style={[styles.subtitle, { color: mutedText }]}>
+            Inventory Overview
+          </ThemedText>
         </View>
 
-        {/* Stats Grid */}
         <View style={styles.statsGrid}>
-          {/* Total Products Card */}
-          <ThemedView style={[styles.statCard, styles.card]}>
-            <View style={[styles.iconContainer, { backgroundColor: '#8B5CF6' }]}>
-              <Ionicons name="cube-outline" size={24} color="#fff" />
+          <ThemedView style={[styles.statCard, styles.card, { backgroundColor: surface, borderColor }]}>
+            <View style={[styles.iconContainer, { backgroundColor: tintColor }]}>
+              <Ionicons name="cube-outline" size={20} color="#fff" />
             </View>
             <ThemedText style={styles.statValue}>{totalProducts}</ThemedText>
-            <ThemedText style={styles.statLabel}>Total Products</ThemedText>
+            <ThemedText style={[styles.statLabel, { color: mutedText }]}>Total Products</ThemedText>
           </ThemedView>
 
-          {/* Total Stock Card */}
-          <ThemedView style={[styles.statCard, styles.card]}>
-            <View style={[styles.iconContainer, { backgroundColor: '#3B82F6' }]}>
-              <Ionicons name="layers-outline" size={24} color="#fff" />
+          <ThemedView style={[styles.statCard, styles.card, { backgroundColor: surface, borderColor }]}>
+            <View style={[styles.iconContainer, { backgroundColor: accent }]}>
+              <Ionicons name="layers-outline" size={20} color="#fff" />
             </View>
             <ThemedText style={styles.statValue}>{totalStock}</ThemedText>
-            <ThemedText style={styles.statLabel}>Total Stock</ThemedText>
+            <ThemedText style={[styles.statLabel, { color: mutedText }]}>Total Stock</ThemedText>
           </ThemedView>
 
-          {/* Low Stock Alert Card */}
-          <ThemedView style={[styles.statCard, styles.card, lowStockProducts.length > 0 && styles.alertCard]}>
-            <View style={[styles.iconContainer, { backgroundColor: lowStockProducts.length > 0 ? '#EF4444' : '#10B981' }]}>
-              <Ionicons name={lowStockProducts.length > 0 ? "alert-circle-outline" : "checkmark-circle-outline"} size={24} color="#fff" />
+          <ThemedView
+            style={[
+              styles.statCard,
+              styles.card,
+              { backgroundColor: surface, borderColor: lowStockProducts.length ? danger : borderColor },
+            ]}>
+            <View
+              style={[
+                styles.iconContainer,
+                { backgroundColor: lowStockProducts.length ? danger : success },
+              ]}>
+              <Ionicons
+                name={lowStockProducts.length ? 'alert-circle-outline' : 'checkmark-circle-outline'}
+                size={20}
+                color="#fff"
+              />
             </View>
             <ThemedText style={styles.statValue}>{lowStockProducts.length}</ThemedText>
-            <ThemedText style={styles.statLabel}>Low Stock Items</ThemedText>
+            <ThemedText style={[styles.statLabel, { color: mutedText }]}>Low Stock Items</ThemedText>
           </ThemedView>
 
-          {/* Inventory Value Card */}
-          <ThemedView style={[styles.statCard, styles.card]}>
-            <View style={[styles.iconContainer, { backgroundColor: '#10B981' }]}>
-              <Ionicons name="cash-outline" size={24} color="#fff" />
+          <ThemedView style={[styles.statCard, styles.card, { backgroundColor: surface, borderColor }]}>
+            <View style={[styles.iconContainer, { backgroundColor: success }]}>
+              <Ionicons name="cash-outline" size={20} color="#fff" />
             </View>
             <ThemedText style={styles.statValue}>₱{totalValue.toLocaleString()}</ThemedText>
-            <ThemedText style={styles.statLabel}>Inventory Value</ThemedText>
+            <ThemedText style={[styles.statLabel, { color: mutedText }]}>Inventory Value</ThemedText>
           </ThemedView>
         </View>
 
-        {/* Low Stock Alerts Section */}
         {lowStockProducts.length > 0 && (
-          <ThemedView style={[styles.section, styles.card]}>
+          <ThemedView style={[styles.section, styles.card, { backgroundColor: surface, borderColor }]}>
             <View style={styles.sectionHeader}>
-              <Ionicons name="warning-outline" size={24} color="#EF4444" />
+              <Ionicons name="warning-outline" size={20} color={danger} />
               <ThemedText type="subtitle" style={styles.sectionTitle}>
                 Low Stock Alerts
               </ThemedText>
             </View>
             {lowStockProducts.map((product) => (
-              <View key={product.sku} style={styles.alertItem}>
+              <View key={product.sku} style={[styles.alertItem, { borderColor }]}>
                 <View style={styles.alertItemLeft}>
                   <ThemedText style={styles.productName}>{product.name}</ThemedText>
-                  <ThemedText style={styles.productSku}>SKU: {product.sku}</ThemedText>
+                  <ThemedText style={[styles.productSku, { color: mutedText }]}>
+                    SKU: {product.sku}
+                  </ThemedText>
                 </View>
                 <View style={styles.alertItemRight}>
-                  <View style={styles.stockBadge}>
-                    <ThemedText style={styles.stockBadgeText}>{product.quantity_on_hand} left</ThemedText>
+                  <View style={[styles.stockBadge, { backgroundColor: `${danger}20` }]}>
+                    <ThemedText style={[styles.stockBadgeText, { color: danger }]}>
+                      {product.quantity_on_hand} left
+                    </ThemedText>
                   </View>
                 </View>
               </View>
@@ -170,40 +212,51 @@ export default function HomeScreen() {
           </ThemedView>
         )}
 
-        {/* Category Breakdown */}
-        <ThemedView style={[styles.section, styles.card]}>
+        <ThemedView style={[styles.section, styles.card, { backgroundColor: surface, borderColor }]}>
           <View style={styles.sectionHeader}>
-            <Ionicons name="pie-chart-outline" size={24} color={tintColor} />
+            <Ionicons name="pie-chart-outline" size={20} color={tintColor} />
             <ThemedText type="subtitle" style={styles.sectionTitle}>
               Category Breakdown
             </ThemedText>
           </View>
           {Object.entries(categoryStats).map(([category, stats]) => (
-            <View key={category} style={styles.categoryItem}>
+            <View key={category} style={[styles.categoryItem, { borderColor }]}>
               <View style={styles.categoryLeft}>
-                <View style={[styles.categoryDot, { backgroundColor: getCategoryColor(category) }]} />
+                <View
+                  style={[
+                    styles.categoryDot,
+                    { backgroundColor: getCategoryColor(category, accent, tintColor) },
+                  ]}
+                />
                 <ThemedText style={styles.categoryName}>{category}</ThemedText>
               </View>
               <View style={styles.categoryRight}>
                 <ThemedText style={styles.categoryValue}>{stats.count} products</ThemedText>
-                <ThemedText style={styles.categoryStock}>{stats.stock} units</ThemedText>
+                <ThemedText style={[styles.categoryStock, { color: mutedText }]}>
+                  {stats.stock} units
+                </ThemedText>
               </View>
             </View>
           ))}
         </ThemedView>
 
-        {/* Quick Actions */}
         <ThemedView style={styles.quickActions}>
-          <TouchableOpacity style={[styles.actionButton, { backgroundColor: tintColor }]}>
-            <Ionicons name="add-circle-outline" size={28} color="#fff" />
+          <TouchableOpacity
+            style={[styles.actionButton, { backgroundColor: tintColor }]}
+            onPress={() => handleQuickAction('Stock In')}>
+            <Ionicons name="add-circle-outline" size={22} color="#fff" />
             <ThemedText style={styles.actionText}>Stock In</ThemedText>
           </TouchableOpacity>
-          <TouchableOpacity style={[styles.actionButton, { backgroundColor: '#EF4444' }]}>
-            <Ionicons name="remove-circle-outline" size={28} color="#fff" />
+          <TouchableOpacity
+            style={[styles.actionButton, { backgroundColor: danger }]}
+            onPress={() => handleQuickAction('Stock Out')}>
+            <Ionicons name="remove-circle-outline" size={22} color="#fff" />
             <ThemedText style={styles.actionText}>Stock Out</ThemedText>
           </TouchableOpacity>
-          <TouchableOpacity style={[styles.actionButton, { backgroundColor: '#F59E0B' }]}>
-            <Ionicons name="swap-horizontal-outline" size={28} color="#fff" />
+          <TouchableOpacity
+            style={[styles.actionButton, { backgroundColor: warning }]}
+            onPress={() => handleQuickAction('Adjustment')}>
+            <Ionicons name="swap-horizontal-outline" size={22} color="#fff" />
             <ThemedText style={styles.actionText}>Adjust</ThemedText>
           </TouchableOpacity>
         </ThemedView>
@@ -212,78 +265,70 @@ export default function HomeScreen() {
   );
 }
 
-function getCategoryColor(category: string): string {
+function getCategoryColor(category: string, accent: string, fallback: string): string {
   const colors: Record<string, string> = {
-    Women: '#EC4899',
-    Men: '#3B82F6',
-    Unisex: '#8B5CF6',
+    Women: '#E58BB5',
+    Men: '#7BA7F6',
+    Unisex: accent,
   };
-  return colors[category] || '#6B7280';
+  return colors[category] || fallback;
 }
 
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    padding: 16,
+    paddingHorizontal: Spacing.lg,
   },
   header: {
-    marginBottom: 24,
+    marginBottom: Spacing.lg,
   },
   title: {
-    marginBottom: 4,
+    marginBottom: Spacing.xs,
   },
   subtitle: {
     fontSize: 14,
-    opacity: 0.6,
   },
   statsGrid: {
     flexDirection: 'row',
     flexWrap: 'wrap',
-    justifyContent: 'space-between',
-    marginBottom: 16,
+    gap: Spacing.md,
+    marginBottom: Spacing.lg,
   },
   card: {
-    borderRadius: 16,
+    borderRadius: Radii.lg,
     borderWidth: 1,
-    borderColor: 'rgba(0,0,0,0.1)',
   },
   statCard: {
-    width: '48%',
-    padding: 16,
-    marginBottom: 16,
+    flexBasis: '48%',
+    padding: Spacing.lg,
     alignItems: 'center',
-  },
-  alertCard: {
-    borderWidth: 2,
-    borderColor: '#FEE2E2',
   },
   iconContainer: {
-    width: 48,
-    height: 48,
-    borderRadius: 24,
+    width: 44,
+    height: 44,
+    borderRadius: Radii.md,
     alignItems: 'center',
     justifyContent: 'center',
-    marginBottom: 12,
+    marginBottom: Spacing.sm,
   },
   statValue: {
-    fontSize: 28,
-    fontWeight: 'bold',
-    marginBottom: 4,
+    fontSize: 26,
+    fontWeight: '700',
+    marginBottom: Spacing.xs,
   },
   statLabel: {
     fontSize: 12,
-    opacity: 0.6,
     textAlign: 'center',
   },
   section: {
-    padding: 16,
-    marginBottom: 16,
+    padding: Spacing.lg,
+    marginBottom: Spacing.lg,
   },
   sectionHeader: {
     flexDirection: 'row',
     alignItems: 'center',
-    marginBottom: 16,
-    gap: 8,
+    gap: Spacing.sm,
+    marginBottom: Spacing.md,
   },
   sectionTitle: {
     fontSize: 18,
@@ -292,33 +337,29 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
-    paddingVertical: 12,
-    borderBottomWidth: 1,
-    borderBottomColor: 'rgba(0,0,0,0.05)',
+    paddingVertical: Spacing.md,
+    borderTopWidth: StyleSheet.hairlineWidth,
   },
   alertItemLeft: {
     flex: 1,
   },
   alertItemRight: {
-    marginLeft: 12,
+    marginLeft: Spacing.md,
   },
   productName: {
     fontSize: 15,
     fontWeight: '600',
-    marginBottom: 4,
+    marginBottom: Spacing.xs / 2,
   },
   productSku: {
     fontSize: 12,
-    opacity: 0.5,
   },
   stockBadge: {
-    backgroundColor: '#FEE2E2',
-    paddingHorizontal: 12,
-    paddingVertical: 6,
-    borderRadius: 12,
+    paddingHorizontal: Spacing.md,
+    paddingVertical: Spacing.xs,
+    borderRadius: Radii.pill,
   },
   stockBadgeText: {
-    color: '#DC2626',
     fontSize: 12,
     fontWeight: '600',
   },
@@ -326,14 +367,13 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
-    paddingVertical: 12,
-    borderBottomWidth: 1,
-    borderBottomColor: 'rgba(0,0,0,0.05)',
+    paddingVertical: Spacing.md,
+    borderTopWidth: StyleSheet.hairlineWidth,
   },
   categoryLeft: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 12,
+    gap: Spacing.sm,
   },
   categoryDot: {
     width: 12,
@@ -350,27 +390,25 @@ const styles = StyleSheet.create({
   categoryValue: {
     fontSize: 14,
     fontWeight: '600',
-    marginBottom: 2,
   },
   categoryStock: {
     fontSize: 12,
-    opacity: 0.6,
+    marginTop: Spacing.xs / 2,
   },
   quickActions: {
     flexDirection: 'row',
-    justifyContent: 'space-between',
-    marginBottom: 24,
-    gap: 8,
+    gap: Spacing.sm,
+    marginTop: Spacing.md,
   },
   actionButton: {
     flex: 1,
     alignItems: 'center',
-    padding: 16,
-    borderRadius: 12,
+    paddingVertical: Spacing.md,
+    borderRadius: Radii.md,
   },
   actionText: {
     color: '#fff',
-    marginTop: 8,
+    marginTop: Spacing.xs,
     fontSize: 13,
     fontWeight: '600',
   },
