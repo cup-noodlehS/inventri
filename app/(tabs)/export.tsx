@@ -493,6 +493,8 @@ const styles = StyleSheet.create({
   summaryValue: {
     fontSize: 42,
     fontWeight: '700',
+    lineHeight: 48,
+    minHeight: 48,
   },
   summaryLabel: {
     fontSize: 14,
