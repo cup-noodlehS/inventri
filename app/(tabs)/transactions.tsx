@@ -1,6 +1,6 @@
 import { Ionicons } from '@expo/vector-icons';
 import { useEffect, useState } from 'react';
-import { ActivityIndicator, Alert, ScrollView, StyleSheet, TextInput, TouchableOpacity, View } from 'react-native';
+import { ActivityIndicator, Alert, FlatList, Modal, ScrollView, StyleSheet, TextInput, TouchableOpacity, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { Tabs } from '@/components/tabs';
@@ -16,7 +16,6 @@ export default function TransactionsScreen() {
   const insets = useSafeAreaInsets();
   const tintColor = useThemeColor({}, 'tint');
   const textColor = useThemeColor({}, 'text');
-  const backgroundColor = useThemeColor({}, 'background');
   const { user } = useAuth();
 
   const [activeTab, setActiveTab] = useState<TransactionType>('Delivery');
@@ -24,7 +23,8 @@ export default function TransactionsScreen() {
   const [quantity, setQuantity] = useState(1);
   const [customerName, setCustomerName] = useState('');
   const [notes, setNotes] = useState('');
-  const [showProductPicker, setShowProductPicker] = useState(false);
+  const [showProductModal, setShowProductModal] = useState(false);
+  const [productSearchQuery, setProductSearchQuery] = useState('');
   const [transactions, setTransactions] = useState<TransactionWithItems[]>([]);
   const [products, setProducts] = useState<CurrentStock[]>([]);
   const [loadingTransactions, setLoadingTransactions] = useState(true);
@@ -216,7 +216,7 @@ export default function TransactionsScreen() {
             <ThemedText style={styles.label}>Product</ThemedText>
             <TouchableOpacity
               style={[styles.picker, { borderColor: tintColor + '40' }]}
-              onPress={() => setShowProductPicker(!showProductPicker)}
+              onPress={() => setShowProductModal(true)}
             >
               <View style={styles.pickerContent}>
                 <Ionicons name="cube-outline" size={20} color={tintColor} />
@@ -227,39 +227,11 @@ export default function TransactionsScreen() {
                 </ThemedText>
               </View>
               <Ionicons
-                name={showProductPicker ? "chevron-up" : "chevron-down"}
+                name="search-outline"
                 size={20}
                 color={tintColor}
               />
             </TouchableOpacity>
-
-            {/* Product Dropdown */}
-            {showProductPicker && (
-              <ScrollView style={[styles.productList, { backgroundColor, maxHeight: 300 }]}>
-                {products.map(product => (
-                  <TouchableOpacity
-                    key={product.sku}
-                    style={styles.productItem}
-                    onPress={() => {
-                      setSelectedProduct(product.sku);
-                      setShowProductPicker(false);
-                    }}
-                  >
-                    <View>
-                      <ThemedText style={styles.productName}>
-                        {product.name} ({product.volume_ml}ml)
-                      </ThemedText>
-                      <ThemedText style={styles.productSku}>
-                        {product.sku} • Stock: {product.quantity_on_hand} • ${product.price}
-                      </ThemedText>
-                    </View>
-                    {selectedProduct === product.sku && (
-                      <Ionicons name="checkmark-circle" size={24} color={tintColor} />
-                    )}
-                  </TouchableOpacity>
-                ))}
-              </ScrollView>
-            )}
           </View>
 
           {/* Quantity Stepper */}
@@ -406,6 +378,92 @@ export default function TransactionsScreen() {
           </View>
         )}
       </ScrollView>
+
+      {/* Product Selection Modal */}
+      <Modal
+        visible={showProductModal}
+        animationType="slide"
+        transparent={true}
+        onRequestClose={() => setShowProductModal(false)}
+      >
+        <View style={styles.modalOverlay}>
+          <ThemedView style={styles.modalContent}>
+            <View style={styles.modalHeader}>
+              <ThemedText style={styles.modalTitle}>Select Product</ThemedText>
+              <TouchableOpacity onPress={() => setShowProductModal(false)}>
+                <Ionicons name="close" size={28} color={tintColor} />
+              </TouchableOpacity>
+            </View>
+
+            {/* Search Bar */}
+            <View style={[styles.searchContainer, { borderColor: tintColor + '40' }]}>
+              <Ionicons name="search-outline" size={20} color={tintColor} />
+              <TextInput
+                style={[styles.searchInput, { color: textColor }]}
+                placeholder="Search products..."
+                placeholderTextColor="#9CA3AF"
+                value={productSearchQuery}
+                onChangeText={setProductSearchQuery}
+              />
+              {productSearchQuery.length > 0 && (
+                <TouchableOpacity onPress={() => setProductSearchQuery('')}>
+                  <Ionicons name="close-circle" size={20} color="#9CA3AF" />
+                </TouchableOpacity>
+              )}
+            </View>
+
+            {/* Products List */}
+            <FlatList
+              data={products.filter(product => {
+                if (!productSearchQuery.trim()) return true;
+                const query = productSearchQuery.toLowerCase();
+                return (
+                  product.name.toLowerCase().includes(query) ||
+                  product.sku.toLowerCase().includes(query)
+                );
+              })}
+              keyExtractor={item => item.sku}
+              renderItem={({ item }) => (
+                <TouchableOpacity
+                  style={[
+                    styles.modalProductItem,
+                    selectedProduct === item.sku && { backgroundColor: tintColor + '20' }
+                  ]}
+                  onPress={() => {
+                    setSelectedProduct(item.sku);
+                    setShowProductModal(false);
+                    setProductSearchQuery('');
+                  }}
+                >
+                  <View style={styles.modalProductInfo}>
+                    <ThemedText style={styles.modalProductName}>{item.name}</ThemedText>
+                    <ThemedText style={styles.modalProductSku}>{item.sku}</ThemedText>
+                    <View style={styles.modalProductMeta}>
+                      <ThemedText style={styles.modalProductVolume}>
+                        {item.volume_ml}ml
+                      </ThemedText>
+                      <ThemedText style={styles.modalProductPrice}>
+                        ₱{item.price.toFixed(2)}
+                      </ThemedText>
+                    </View>
+                  </View>
+                  {selectedProduct === item.sku && (
+                    <Ionicons name="checkmark-circle" size={24} color={tintColor} />
+                  )}
+                </TouchableOpacity>
+              )}
+              contentContainerStyle={styles.modalProductList}
+              showsVerticalScrollIndicator={false}
+              ListEmptyComponent={
+                <ThemedView style={styles.modalEmptyState}>
+                  <Ionicons name="cube-outline" size={48} color="#9CA3AF" />
+                  <ThemedText style={styles.modalEmptyText}>No products found</ThemedText>
+                </ThemedView>
+              }
+            />
+          </ThemedView>
+        </View>
+      </Modal>
     </ThemedView>
   );
 }
@@ -625,5 +683,89 @@ const styles = StyleSheet.create({
   transactionQuantity: {
     fontSize: 20,
     fontWeight: 'bold',
+  },
+  modalOverlay: {
+    flex: 1,
+    backgroundColor: 'rgba(0,0,0,0.5)',
+    justifyContent: 'flex-end',
+  },
+  modalContent: {
+    borderTopLeftRadius: 20,
+    borderTopRightRadius: 20,
+    padding: 20,
+    maxHeight: '90%',
+  },
+  modalHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: 16,
+  },
+  modalTitle: {
+    fontSize: 20,
+    fontWeight: 'bold',
+  },
+  searchContainer: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingHorizontal: 16,
+    paddingVertical: 12,
+    borderRadius: 12,
+    borderWidth: 2,
+    gap: 12,
+    marginBottom: 16,
+  },
+  searchInput: {
+    flex: 1,
+    fontSize: 15,
+    padding: 0,
+  },
+  modalProductList: {
+    paddingBottom: 20,
+  },
+  modalProductItem: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    padding: 16,
+    borderRadius: 12,
+    marginBottom: 8,
+    borderWidth: 1,
+    borderColor: 'rgba(0,0,0,0.1)',
+  },
+  modalProductInfo: {
+    flex: 1,
+  },
+  modalProductName: {
+    fontSize: 16,
+    fontWeight: '600',
+    marginBottom: 4,
+  },
+  modalProductSku: {
+    fontSize: 12,
+    opacity: 0.6,
+    marginBottom: 8,
+  },
+  modalProductMeta: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 12,
+  },
+  modalProductVolume: {
+    fontSize: 14,
+    opacity: 0.7,
+  },
+  modalProductPrice: {
+    fontSize: 14,
+    fontWeight: '600',
+  },
+  modalEmptyState: {
+    padding: 40,
+    alignItems: 'center',
+  },
+  modalEmptyText: {
+    marginTop: 16,
+    fontSize: 16,
+    opacity: 0.6,
   },
 });

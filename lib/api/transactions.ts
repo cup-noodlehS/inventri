@@ -1,8 +1,9 @@
+import { createUserRecord, userRecordExists } from '@/lib/api/users';
 import { supabase } from '@/lib/supabase';
 import {
-    CreateTransactionInput,
-    Transaction,
-    TransactionItem,
+  CreateTransactionInput,
+  Transaction,
+  TransactionItem,
 } from '@/lib/types';
 
 export interface TransactionWithItems extends Transaction {
@@ -36,6 +37,37 @@ export async function createTransaction(
 
       if (typeof item.quantity !== 'number' || item.quantity === 0) {
         return { data: null, error: new Error('Valid quantity is required for all items') };
+      }
+    }
+
+    // Ensure user record exists before creating transaction
+    const { data: userExists } = await userRecordExists(input.userId);
+    if (!userExists) {
+      // Try to get user metadata from auth
+      const { data: { user: authUser } } = await supabase.auth.getUser();
+      if (authUser?.user_metadata) {
+        const metadata = authUser.user_metadata;
+        if (metadata?.username && metadata?.full_name) {
+          await createUserRecord(
+            input.userId,
+            metadata.username,
+            metadata.full_name
+          );
+        } else {
+          // Fallback: create with minimal info
+          await createUserRecord(
+            input.userId,
+            authUser.email?.split('@')[0] || 'user',
+            authUser.email || 'User'
+          );
+        }
+      } else {
+        // Last resort: create with user ID as username
+        await createUserRecord(
+          input.userId,
+          `user_${input.userId.slice(0, 8)}`,
+          'User'
+        );
       }
     }
 

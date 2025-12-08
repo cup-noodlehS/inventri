@@ -409,7 +409,11 @@ export default function ProductsScreen() {
               </TouchableOpacity>
             </View>
 
-            <ScrollView style={styles.modalForm} showsVerticalScrollIndicator={false}>
+            <ScrollView 
+              style={styles.modalForm} 
+              contentContainerStyle={styles.modalFormContent}
+              showsVerticalScrollIndicator={false}
+            >
               {/* SKU */}
               <View style={styles.formGroup}>
                 <ThemedText style={styles.label}>SKU *</ThemedText>
@@ -693,6 +697,7 @@ const styles = StyleSheet.create({
     borderTopRightRadius: 20,
     padding: 20,
     maxHeight: '90%',
+    flexDirection: 'column',
   },
   modalHeader: {
     flexDirection: 'row',
@@ -705,7 +710,11 @@ const styles = StyleSheet.create({
     fontWeight: 'bold',
   },
   modalForm: {
-    maxHeight: '70%',
+    flexShrink: 1,
+    flexGrow: 0,
+  },
+  modalFormContent: {
+    paddingBottom: 0,
   },
   formGroup: {
     marginBottom: 16,
