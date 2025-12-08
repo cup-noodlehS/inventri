@@ -5,7 +5,7 @@ import * as Sharing from 'expo-sharing';
 import * as XLSX from 'xlsx';
 
 import { TransactionWithItems } from '@/lib/api/transactions';
-import { CurrentStock, TransactionItem } from '@/lib/types';
+import { CurrentStock, InventoryLedger, TransactionItem } from '@/lib/types';
 
 // Workaround for expo-file-system v19 type definitions
 const getDocumentDirectory = (): string => {
@@ -69,7 +69,7 @@ export async function exportProductsToCSV(
     const file = filename || generateFilename('products', '.csv');
 
     // Headers
-    const headers = ['SKU', 'Name', 'Category', 'Price', 'Stock', 'Min Threshold', 'Barcode', 'Value'];
+    const headers = ['SKU', 'Name', 'Volume (ML)', 'Price', 'Stock', 'Min Threshold', 'Value'];
     const csvRows = [headers.join(',')];
 
     // Data rows
@@ -77,11 +77,10 @@ export async function exportProductsToCSV(
       const row = [
         escapeCSV(product.sku),
         escapeCSV(product.name),
-        escapeCSV(product.category_name || 'Uncategorized'),
+        escapeCSV(String(product.volume_ml)),
         escapeCSV(formatCurrency(product.price)),
         escapeCSV(String(product.quantity_on_hand)),
         escapeCSV(String(product.min_stock_threshold)),
-        escapeCSV(product.barcode_value || ''),
         escapeCSV(formatCurrency(product.total_value)),
       ];
       csvRows.push(row.join(','));
@@ -126,12 +125,10 @@ export async function exportProductsToExcel(
     const excelData = products.map((product) => ({
       SKU: product.sku,
       Name: product.name,
-      Category: product.category_name || 'Uncategorized',
+      'Volume (ML)': product.volume_ml,
       Price: product.price,
       'Stock Quantity': product.quantity_on_hand,
       'Min Stock Threshold': product.min_stock_threshold,
-      'Barcode Value': product.barcode_value || '',
-      'Barcode Type': product.barcode_type || '',
       'Total Value': product.total_value,
       Description: product.description || '',
     }));
@@ -143,12 +140,10 @@ export async function exportProductsToExcel(
     const columnWidths = [
       { wch: 15 }, // SKU
       { wch: 30 }, // Name
-      { wch: 15 }, // Category
+      { wch: 12 }, // Volume (ML)
       { wch: 12 }, // Price
       { wch: 12 }, // Stock Quantity
       { wch: 15 }, // Min Threshold
-      { wch: 20 }, // Barcode Value
-      { wch: 12 }, // Barcode Type
       { wch: 15 }, // Total Value
       { wch: 40 }, // Description
     ];
@@ -201,11 +196,11 @@ export async function exportProductsToPDF(
     const totalValue = products.reduce((sum, p) => sum + p.total_value, 0);
 
     // Prepare table data
-    const headers = ['SKU', 'Name', 'Category', 'Price', 'Stock', 'Min Threshold', 'Value'];
+    const headers = ['SKU', 'Name', 'Volume (ML)', 'Price', 'Stock', 'Min Threshold', 'Value'];
     const rows = products.map((product) => [
       product.sku,
       product.name,
-      product.category_name || 'Uncategorized',
+      String(product.volume_ml),
       formatCurrency(product.price),
       String(product.quantity_on_hand),
       String(product.min_stock_threshold),
@@ -542,9 +537,9 @@ export async function exportTransactionsToPDF(
       }
 
       const typeColor =
-        transaction.transaction_type === 'Stock In'
+        transaction.transaction_type === 'Delivery'
           ? '#10B981'
-          : transaction.transaction_type === 'Stock Out'
+          : transaction.transaction_type === 'Sale'
           ? '#EF4444'
           : '#F59E0B';
 
@@ -560,8 +555,8 @@ export async function exportTransactionsToPDF(
             </div>
           </div>
           <div style="margin-bottom: 10px;">
-            <strong>Reference:</strong> ${transaction.reference || 'N/A'} | 
-            <strong>Status:</strong> ${transaction.status} | 
+            <strong>Reference:</strong> ${transaction.reference || 'N/A'} |
+            <strong>Status:</strong> ${transaction.status} |
             <strong>Performed By:</strong> ${transaction.performed_by}
           </div>
           ${items.length > 0 ? `<div style="margin-top: 15px;">${itemsTable}</div>` : '<p>No items in this transaction</p>'}
@@ -668,6 +663,293 @@ export async function exportTransactionsToPDF(
   } catch (error: any) {
     console.error('Export transactions PDF error:', error);
     return { success: false, error: error?.message || 'Failed to export transactions to PDF' };
+  }
+}
+
+// Inventory Ledger Export Functions
+export async function exportInventoryLedgerToCSV(
+  ledger: InventoryLedger[],
+  startDate: Date,
+  endDate: Date,
+  filename?: string
+): Promise<{ success: boolean; error?: string }> {
+  try {
+    if (!ledger || ledger.length === 0) {
+      return { success: false, error: 'No ledger data to export' };
+    }
+
+    const file = filename || generateFilename('inventory_ledger', '.csv');
+
+    // Headers matching the manual ledger format
+    const headers = ['Product', 'ML', 'Beg Inv', 'Deliveries', 'Sales', 'End Inv', 'Value', 'Remarks'];
+    const csvRows = [headers.join(',')];
+
+    // Add date range info
+    csvRows.push(`"Period: ${format(startDate, 'MMM dd, yyyy')} - ${format(endDate, 'MMM dd, yyyy')}"`);
+    csvRows.push(''); // Empty row for spacing
+
+    // Data rows
+    ledger.forEach((item) => {
+      const row = [
+        escapeCSV(item.name),
+        escapeCSV(String(item.volume_ml)),
+        escapeCSV(String(item.beginning_inventory)),
+        escapeCSV(String(item.total_deliveries)),
+        escapeCSV(String(item.total_sales)),
+        escapeCSV(String(item.ending_inventory)),
+        escapeCSV(formatCurrency(item.inventory_value)),
+        escapeCSV(''), // Remarks column (empty for now)
+      ];
+      csvRows.push(row.join(','));
+    });
+
+    const csvContent = csvRows.join('\n');
+    const fileUri = getDocumentDirectory() + file;
+
+    await FileSystem.writeAsStringAsync(fileUri, csvContent, {
+      encoding: 'utf8' as any,
+    });
+
+    const isAvailable = await Sharing.isAvailableAsync();
+    if (isAvailable) {
+      await Sharing.shareAsync(fileUri, {
+        mimeType: 'text/csv',
+        dialogTitle: 'Export Inventory Ledger CSV',
+      });
+    } else {
+      return { success: false, error: 'Sharing is not available on this device' };
+    }
+
+    return { success: true };
+  } catch (error: any) {
+    console.error('Export ledger CSV error:', error);
+    return { success: false, error: error?.message || 'Failed to export ledger to CSV' };
+  }
+}
+
+export async function exportInventoryLedgerToExcel(
+  ledger: InventoryLedger[],
+  startDate: Date,
+  endDate: Date,
+  filename?: string
+): Promise<{ success: boolean; error?: string }> {
+  try {
+    if (!ledger || ledger.length === 0) {
+      return { success: false, error: 'No ledger data to export' };
+    }
+
+    const file = filename || generateFilename('inventory_ledger', '.xlsx');
+
+    // Prepare data for Excel matching manual ledger format
+    const excelData = ledger.map((item) => ({
+      'Product': item.name,
+      'ML': item.volume_ml,
+      'Beg Inv': item.beginning_inventory,
+      'Deliveries': item.total_deliveries,
+      'Sales': item.total_sales,
+      'End Inv': item.ending_inventory,
+      'Value': item.inventory_value,
+      'Remarks': '', // Empty remarks column
+    }));
+
+    // Create worksheet
+    const worksheet = XLSX.utils.json_to_sheet(excelData);
+
+    // Add date range header
+    XLSX.utils.sheet_add_aoa(worksheet, [[`Period: ${format(startDate, 'MMM dd, yyyy')} - ${format(endDate, 'MMM dd, yyyy')}`]], { origin: 'A1' });
+    XLSX.utils.sheet_add_json(worksheet, excelData, { origin: 'A3', skipHeader: false });
+
+    // Set column widths
+    const columnWidths = [
+      { wch: 30 }, // Product
+      { wch: 8 },  // ML
+      { wch: 10 }, // Beg Inv
+      { wch: 12 }, // Deliveries
+      { wch: 10 }, // Sales
+      { wch: 10 }, // End Inv
+      { wch: 15 }, // Value
+      { wch: 30 }, // Remarks
+    ];
+    worksheet['!cols'] = columnWidths;
+
+    // Create workbook
+    const workbook = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(workbook, worksheet, 'Inventory Ledger');
+
+    // Convert to base64
+    const excelBuffer = XLSX.write(workbook, { type: 'base64', bookType: 'xlsx' });
+    const fileUri = getDocumentDirectory() + file;
+
+    // Write file
+    await FileSystem.writeAsStringAsync(fileUri, excelBuffer, {
+      encoding: 'base64' as any,
+    });
+
+    const isAvailable = await Sharing.isAvailableAsync();
+    if (isAvailable) {
+      await Sharing.shareAsync(fileUri, {
+        mimeType: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+        dialogTitle: 'Export Inventory Ledger Excel',
+      });
+    } else {
+      return { success: false, error: 'Sharing is not available on this device' };
+    }
+
+    return { success: true };
+  } catch (error: any) {
+    console.error('Export ledger Excel error:', error);
+    return { success: false, error: error?.message || 'Failed to export ledger to Excel' };
+  }
+}
+
+export async function exportInventoryLedgerToPDF(
+  ledger: InventoryLedger[],
+  startDate: Date,
+  endDate: Date,
+  filename?: string
+): Promise<{ success: boolean; error?: string }> {
+  try {
+    if (!ledger || ledger.length === 0) {
+      return { success: false, error: 'No ledger data to export' };
+    }
+
+    const file = filename || generateFilename('inventory_ledger', '.pdf');
+
+    // Calculate totals
+    const totalBegInv = ledger.reduce((sum, item) => sum + item.beginning_inventory, 0);
+    const totalDeliveries = ledger.reduce((sum, item) => sum + item.total_deliveries, 0);
+    const totalSales = ledger.reduce((sum, item) => sum + item.total_sales, 0);
+    const totalEndInv = ledger.reduce((sum, item) => sum + item.ending_inventory, 0);
+    const totalValue = ledger.reduce((sum, item) => sum + item.inventory_value, 0);
+
+    // Prepare table data
+    const headers = ['Product', 'ML', 'Beg Inv', 'Deliveries', 'Sales', 'End Inv', 'Value'];
+    const rows = ledger.map((item) => [
+      item.name,
+      String(item.volume_ml),
+      String(item.beginning_inventory),
+      String(item.total_deliveries),
+      String(item.total_sales),
+      String(item.ending_inventory),
+      formatCurrency(item.inventory_value),
+    ]);
+
+    const tableHTML = generateHTMLTable(headers, rows);
+
+    // Generate HTML document
+    const html = `
+      <!DOCTYPE html>
+      <html>
+        <head>
+          <meta charset="UTF-8">
+          <style>
+            body {
+              font-family: Arial, sans-serif;
+              padding: 20px;
+            }
+            h1 {
+              color: #1f2937;
+              margin-bottom: 5px;
+            }
+            .date-range {
+              color: #6b7280;
+              font-size: 14px;
+              margin-bottom: 20px;
+            }
+            .summary {
+              background-color: #f3f4f6;
+              padding: 15px;
+              border-radius: 8px;
+              margin-bottom: 20px;
+            }
+            .summary-item {
+              display: inline-block;
+              margin-right: 25px;
+            }
+            .summary-label {
+              font-size: 11px;
+              color: #6b7280;
+            }
+            .summary-value {
+              font-size: 20px;
+              font-weight: bold;
+              color: #1f2937;
+            }
+            table {
+              width: 100%;
+              border-collapse: collapse;
+              margin-top: 20px;
+            }
+            th {
+              background-color: #3b82f6;
+              color: white;
+              padding: 10px 8px;
+              text-align: left;
+              font-weight: bold;
+              font-size: 11px;
+            }
+            td {
+              padding: 8px;
+              border-bottom: 1px solid #e5e7eb;
+              font-size: 10px;
+            }
+            tr:nth-child(even) {
+              background-color: #f9fafb;
+            }
+          </style>
+        </head>
+        <body>
+          <h1>Inventory Ledger</h1>
+          <div class="date-range">
+            Period: ${format(startDate, 'MMMM dd, yyyy')} - ${format(endDate, 'MMMM dd, yyyy')}
+          </div>
+          <div class="summary">
+            <div class="summary-item">
+              <div class="summary-label">Beginning Inventory</div>
+              <div class="summary-value">${totalBegInv.toLocaleString()}</div>
+            </div>
+            <div class="summary-item">
+              <div class="summary-label">Total Deliveries</div>
+              <div class="summary-value">${totalDeliveries.toLocaleString()}</div>
+            </div>
+            <div class="summary-item">
+              <div class="summary-label">Total Sales</div>
+              <div class="summary-value">${totalSales.toLocaleString()}</div>
+            </div>
+            <div class="summary-item">
+              <div class="summary-label">Ending Inventory</div>
+              <div class="summary-value">${totalEndInv.toLocaleString()}</div>
+            </div>
+            <div class="summary-item">
+              <div class="summary-label">Total Value</div>
+              <div class="summary-value">${formatCurrency(totalValue)}</div>
+            </div>
+          </div>
+          ${tableHTML}
+          <p style="margin-top: 30px; color: #6b7280; font-size: 12px;">
+            Generated on ${format(new Date(), 'MMMM dd, yyyy HH:mm')}
+          </p>
+        </body>
+      </html>
+    `;
+
+    // Generate PDF
+    const { uri } = await Print.printToFileAsync({ html });
+
+    const isAvailable = await Sharing.isAvailableAsync();
+    if (isAvailable) {
+      await Sharing.shareAsync(uri, {
+        mimeType: 'application/pdf',
+        dialogTitle: 'Export Inventory Ledger PDF',
+      });
+    } else {
+      return { success: false, error: 'Sharing is not available on this device' };
+    }
+
+    return { success: true };
+  } catch (error: any) {
+    console.error('Export ledger PDF error:', error);
+    return { success: false, error: error?.message || 'Failed to export ledger to PDF' };
   }
 }
 

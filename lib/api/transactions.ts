@@ -24,8 +24,8 @@ export async function createTransaction(
       return { data: null, error: new Error('At least one transaction item is required') };
     }
 
-    if (!['Stock In', 'Stock Out', 'Adjustment'].includes(input.transaction_type)) {
-      return { data: null, error: new Error('Invalid transaction type') };
+    if (!['Delivery', 'Sale'].includes(input.transaction_type)) {
+      return { data: null, error: new Error('Invalid transaction type. Must be "Delivery" or "Sale"') };
     }
 
     // Validate all items before processing
@@ -41,6 +41,8 @@ export async function createTransaction(
 
     const sanitizedReference = input.reference?.trim() || null;
     const sanitizedNotes = input.notes?.trim() || null;
+    const sanitizedCustomerName = input.customer_name?.trim() || null;
+
     const { data: transaction, error: transError } = await supabase
       .from('inventory_transaction')
       .insert({
@@ -48,6 +50,7 @@ export async function createTransaction(
         reference: sanitizedReference,
         performed_by: input.userId,
         notes: sanitizedNotes,
+        customer_name: sanitizedCustomerName,
       })
       .select()
       .single();
@@ -79,11 +82,11 @@ export async function createTransaction(
         return { data: null, error: productError || new Error(`Product not found: ${sanitizedSku}`) };
       }
 
-      // Normalize quantity: Stock Out becomes negative, Stock In positive, Adjustment stays as-is
+      // Normalize quantity: Sale becomes negative, Delivery positive
       let quantity = item.quantity;
-      if (input.transaction_type === 'Stock Out') {
+      if (input.transaction_type === 'Sale') {
         quantity = -Math.abs(item.quantity);
-      } else if (input.transaction_type === 'Stock In') {
+      } else if (input.transaction_type === 'Delivery') {
         quantity = Math.abs(item.quantity);
       }
 
@@ -212,6 +215,73 @@ export async function getRecentTransactions(
     return { data, error: null };
   } catch (error) {
     console.error('Error in getRecentTransactions:', error);
+    return { data: null, error };
+  }
+}
+
+/**
+ * Fetch transactions within a date range
+ */
+export async function getTransactionsByDateRange(
+  startDate: Date,
+  endDate: Date,
+  transactionType?: 'Delivery' | 'Sale'
+): Promise<{
+  data: TransactionWithItems[] | null;
+  error: any;
+}> {
+  try {
+    let query = supabase
+      .from('inventory_transaction')
+      .select('*, transaction_item(*)')
+      .gte('timestamp', startDate.toISOString())
+      .lte('timestamp', endDate.toISOString())
+      .order('timestamp', { ascending: false });
+
+    if (transactionType) {
+      query = query.eq('transaction_type', transactionType);
+    }
+
+    const { data, error } = await query;
+
+    if (error) {
+      console.error('Error fetching transactions by date range:', error);
+      return { data: null, error };
+    }
+
+    return { data, error: null };
+  } catch (error) {
+    console.error('Error in getTransactionsByDateRange:', error);
+    return { data: null, error };
+  }
+}
+
+/**
+ * Get inventory ledger data for export
+ * Uses the database function get_inventory_ledger
+ */
+export async function getInventoryLedger(
+  startDate: Date,
+  endDate: Date
+): Promise<{
+  data: any[] | null;
+  error: any;
+}> {
+  try {
+    const { data, error } = await supabase
+      .rpc('get_inventory_ledger', {
+        start_date: startDate.toISOString(),
+        end_date: endDate.toISOString(),
+      });
+
+    if (error) {
+      console.error('Error fetching inventory ledger:', error);
+      return { data: null, error };
+    }
+
+    return { data, error: null };
+  } catch (error) {
+    console.error('Error in getInventoryLedger:', error);
     return { data: null, error };
   }
 }

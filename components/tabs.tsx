@@ -1,10 +1,16 @@
 import { View, TouchableOpacity, StyleSheet } from 'react-native';
 import { ThemedText } from '@/components/themed-text';
 
-export function Tabs({ tabs, activeTab, onTabPress }) {
+interface TabsProps {
+  tabs: string[];
+  activeTab: string;
+  onTabPress: (tab: string) => void;
+}
+
+export function Tabs({ tabs, activeTab, onTabPress }: TabsProps) {
   return (
     <View style={styles.tabsContainer}>
-      {tabs.map(tab => (
+      {tabs.map((tab: string) => (
         <TouchableOpacity
           key={tab}
           style={[styles.tab, activeTab === tab && styles.activeTab]}

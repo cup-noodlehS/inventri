@@ -1,6 +1,6 @@
 import { Ionicons } from '@expo/vector-icons';
 import { useEffect, useState } from 'react';
-import { Alert, RefreshControl, ScrollView, StyleSheet, TouchableOpacity, View } from 'react-native';
+import { ActivityIndicator, Alert, RefreshControl, ScrollView, StyleSheet, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { ThemedText } from '@/components/themed-text';
@@ -13,7 +13,7 @@ import { CurrentStock } from '@/lib/types';
 export default function HomeScreen() {
   const tintColor = useThemeColor({}, 'tint');
   const insets = useSafeAreaInsets();
-  
+
   const [products, setProducts] = useState<CurrentStock[]>([]);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
@@ -22,13 +22,13 @@ export default function HomeScreen() {
     try {
       setLoading(true);
       const { data, error } = await getProducts();
-      
+
       if (error) {
         console.error('Error fetching products:', error);
         Alert.alert('Error', 'Failed to load products. Please try again.');
         return;
       }
-      
+
       if (data) {
         setProducts(data);
       }
@@ -70,40 +70,32 @@ export default function HomeScreen() {
 
   if (loading) {
     return (
-      <ThemedView style={styles.container}>
-        <ThemedText>Loading...</ThemedText>
+      <ThemedView style={[styles.container, { paddingTop: insets.top }]}>
+        <View style={styles.loadingContainer}>
+          <ActivityIndicator size="large" color={tintColor} />
+          <ThemedText style={{ marginTop: 16 }}>Loading dashboard...</ThemedText>
+        </View>
       </ThemedView>
     );
   }
 
   const totalStock = products.reduce((sum, product) => sum + product.quantity_on_hand, 0);
-  const lowStockProducts = products.filter(product => product.quantity_on_hand < product.min_stock_threshold);
+  const lowStockProducts = products.filter(product => product.quantity_on_hand <= product.min_stock_threshold);
   const totalProducts = products.length;
-  const totalValue = products.reduce((sum, product) => sum + (product.quantity_on_hand * product.price), 0);
-  
-  // Category breakdown
-  const categoryStats = products.reduce((acc, product) => {
-    const categoryName = product.category_name || 'Uncategorized';
-    if (!acc[categoryName]) {
-      acc[categoryName] = { count: 0, stock: 0 };
-    }
-    acc[categoryName].count += 1;
-    acc[categoryName].stock += product.quantity_on_hand;
-    return acc;
-  }, {} as Record<string, { count: number; stock: number }>);
+  const totalValue = products.reduce((sum, product) => sum + product.total_value, 0);
 
   return (
     <ThemedView style={[styles.container, { paddingTop: insets.top }]}>
-      <ScrollView 
+      <ScrollView
         showsVerticalScrollIndicator={false}
         refreshControl={
-          <RefreshControl refreshing={refreshing} onRefresh={handleRefresh} />
+          <RefreshControl refreshing={refreshing} onRefresh={handleRefresh} tintColor={tintColor} />
         }
       >
         {/* Header */}
         <View style={styles.header}>
           <ThemedText type="title" style={styles.title}>Dashboard</ThemedText>
-          <ThemedText style={styles.subtitle}>Inventory Overview</ThemedText>
+          <ThemedText style={styles.subtitle}>Perfume Inventory Overview</ThemedText>
         </View>
 
         {/* Stats Grid */}
@@ -123,7 +115,7 @@ export default function HomeScreen() {
               <Ionicons name="layers-outline" size={24} color="#fff" />
             </View>
             <ThemedText style={styles.statValue}>{totalStock}</ThemedText>
-            <ThemedText style={styles.statLabel}>Total Stock</ThemedText>
+            <ThemedText style={styles.statLabel}>Current Inventory</ThemedText>
           </ThemedView>
 
           {/* Low Stock Alert Card */}
@@ -131,8 +123,10 @@ export default function HomeScreen() {
             <View style={[styles.iconContainer, { backgroundColor: lowStockProducts.length > 0 ? '#EF4444' : '#10B981' }]}>
               <Ionicons name={lowStockProducts.length > 0 ? "alert-circle-outline" : "checkmark-circle-outline"} size={24} color="#fff" />
             </View>
-            <ThemedText style={styles.statValue}>{lowStockProducts.length}</ThemedText>
-            <ThemedText style={styles.statLabel}>Low Stock Items</ThemedText>
+            <ThemedText style={[styles.statValue, lowStockProducts.length > 0 && { color: '#EF4444' }]}>
+              {lowStockProducts.length}
+            </ThemedText>
+            <ThemedText style={styles.statLabel}>Low Stock Alerts</ThemedText>
           </ThemedView>
 
           {/* Inventory Value Card */}
@@ -140,8 +134,8 @@ export default function HomeScreen() {
             <View style={[styles.iconContainer, { backgroundColor: '#10B981' }]}>
               <Ionicons name="cash-outline" size={24} color="#fff" />
             </View>
-            <ThemedText style={styles.statValue}>₱{totalValue.toLocaleString()}</ThemedText>
-            <ThemedText style={styles.statLabel}>Inventory Value</ThemedText>
+            <ThemedText style={styles.statValue}>₱{totalValue.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</ThemedText>
+            <ThemedText style={styles.statLabel}>Total Value</ThemedText>
           </ThemedView>
         </View>
 
@@ -154,77 +148,81 @@ export default function HomeScreen() {
                 Low Stock Alerts
               </ThemedText>
             </View>
-            {lowStockProducts.map((product) => (
-              <View key={product.sku} style={styles.alertItem}>
-                <View style={styles.alertItemLeft}>
-                  <ThemedText style={styles.productName}>{product.name}</ThemedText>
-                  <ThemedText style={styles.productSku}>SKU: {product.sku}</ThemedText>
-                </View>
-                <View style={styles.alertItemRight}>
-                  <View style={styles.stockBadge}>
-                    <ThemedText style={styles.stockBadgeText}>{product.quantity_on_hand} left</ThemedText>
+            <View style={styles.alertsContainer}>
+              {lowStockProducts.slice(0, 5).map((product) => (
+                <View key={product.sku} style={styles.alertItem}>
+                  <View style={styles.alertItemLeft}>
+                    <ThemedText style={styles.productName}>{product.name}</ThemedText>
+                    <ThemedText style={styles.productDetails}>
+                      {product.volume_ml}ml • SKU: {product.sku}
+                    </ThemedText>
+                  </View>
+                  <View style={styles.alertItemRight}>
+                    <View style={styles.stockBadge}>
+                      <ThemedText style={styles.stockBadgeText}>{product.quantity_on_hand} left</ThemedText>
+                    </View>
                   </View>
                 </View>
-              </View>
-            ))}
+              ))}
+              {lowStockProducts.length > 5 && (
+                <ThemedText style={styles.moreItemsText}>
+                  +{lowStockProducts.length - 5} more items need attention
+                </ThemedText>
+              )}
+            </View>
           </ThemedView>
         )}
 
-        {/* Category Breakdown */}
+        {/* Summary Section */}
         <ThemedView style={[styles.section, styles.card]}>
           <View style={styles.sectionHeader}>
-            <Ionicons name="pie-chart-outline" size={24} color={tintColor} />
+            <Ionicons name="bar-chart-outline" size={24} color={tintColor} />
             <ThemedText type="subtitle" style={styles.sectionTitle}>
-              Category Breakdown
+              Inventory Summary
             </ThemedText>
           </View>
-          {Object.entries(categoryStats).map(([category, stats]) => (
-            <View key={category} style={styles.categoryItem}>
-              <View style={styles.categoryLeft}>
-                <View style={[styles.categoryDot, { backgroundColor: getCategoryColor(category) }]} />
-                <ThemedText style={styles.categoryName}>{category}</ThemedText>
-              </View>
-              <View style={styles.categoryRight}>
-                <ThemedText style={styles.categoryValue}>{stats.count} products</ThemedText>
-                <ThemedText style={styles.categoryStock}>{stats.stock} units</ThemedText>
-              </View>
+          <View style={styles.summaryGrid}>
+            <View style={styles.summaryItem}>
+              <ThemedText style={styles.summaryLabel}>Products in Stock</ThemedText>
+              <ThemedText style={styles.summaryValue}>
+                {products.filter(p => p.quantity_on_hand > 0).length} / {totalProducts}
+              </ThemedText>
             </View>
-          ))}
-        </ThemedView>
-
-        {/* Quick Actions */}
-        <ThemedView style={styles.quickActions}>
-          <TouchableOpacity style={[styles.actionButton, { backgroundColor: tintColor }]}>
-            <Ionicons name="add-circle-outline" size={28} color="#fff" />
-            <ThemedText style={styles.actionText}>Stock In</ThemedText>
-          </TouchableOpacity>
-          <TouchableOpacity style={[styles.actionButton, { backgroundColor: '#EF4444' }]}>
-            <Ionicons name="remove-circle-outline" size={28} color="#fff" />
-            <ThemedText style={styles.actionText}>Stock Out</ThemedText>
-          </TouchableOpacity>
-          <TouchableOpacity style={[styles.actionButton, { backgroundColor: '#F59E0B' }]}>
-            <Ionicons name="swap-horizontal-outline" size={28} color="#fff" />
-            <ThemedText style={styles.actionText}>Adjust</ThemedText>
-          </TouchableOpacity>
+            <View style={styles.summaryItem}>
+              <ThemedText style={styles.summaryLabel}>Out of Stock</ThemedText>
+              <ThemedText style={styles.summaryValue}>
+                {products.filter(p => p.quantity_on_hand === 0).length}
+              </ThemedText>
+            </View>
+            <View style={styles.summaryItem}>
+              <ThemedText style={styles.summaryLabel}>Avg. Stock per Product</ThemedText>
+              <ThemedText style={styles.summaryValue}>
+                {totalProducts > 0 ? Math.round(totalStock / totalProducts) : 0} units
+              </ThemedText>
+            </View>
+            <View style={styles.summaryItem}>
+              <ThemedText style={styles.summaryLabel}>Avg. Value per Product</ThemedText>
+              <ThemedText style={styles.summaryValue}>
+                ₱{totalProducts > 0 ? (totalValue / totalProducts).toFixed(2) : '0.00'}
+              </ThemedText>
+            </View>
+          </View>
         </ThemedView>
       </ScrollView>
     </ThemedView>
   );
 }
 
-function getCategoryColor(category: string): string {
-  const colors: Record<string, string> = {
-    Women: '#EC4899',
-    Men: '#3B82F6',
-    Unisex: '#8B5CF6',
-  };
-  return colors[category] || '#6B7280';
-}
-
 const styles = StyleSheet.create({
   container: {
     flex: 1,
     padding: 16,
+  },
+  loadingContainer: {
+    flex: 1,
+    justifyContent: 'center',
+    alignItems: 'center',
+    paddingVertical: 40,
   },
   header: {
     marginBottom: 24,
@@ -288,6 +286,9 @@ const styles = StyleSheet.create({
   sectionTitle: {
     fontSize: 18,
   },
+  alertsContainer: {
+    gap: 0,
+  },
   alertItem: {
     flexDirection: 'row',
     justifyContent: 'space-between',
@@ -307,7 +308,7 @@ const styles = StyleSheet.create({
     fontWeight: '600',
     marginBottom: 4,
   },
-  productSku: {
+  productDetails: {
     fontSize: 12,
     opacity: 0.5,
   },
@@ -322,56 +323,31 @@ const styles = StyleSheet.create({
     fontSize: 12,
     fontWeight: '600',
   },
-  categoryItem: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    paddingVertical: 12,
-    borderBottomWidth: 1,
-    borderBottomColor: 'rgba(0,0,0,0.05)',
-  },
-  categoryLeft: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 12,
-  },
-  categoryDot: {
-    width: 12,
-    height: 12,
-    borderRadius: 6,
-  },
-  categoryName: {
-    fontSize: 15,
-    fontWeight: '600',
-  },
-  categoryRight: {
-    alignItems: 'flex-end',
-  },
-  categoryValue: {
-    fontSize: 14,
-    fontWeight: '600',
-    marginBottom: 2,
-  },
-  categoryStock: {
-    fontSize: 12,
+  moreItemsText: {
+    fontSize: 13,
     opacity: 0.6,
+    marginTop: 12,
+    textAlign: 'center',
+    fontStyle: 'italic',
   },
-  quickActions: {
+  summaryGrid: {
     flexDirection: 'row',
-    justifyContent: 'space-between',
-    marginBottom: 24,
-    gap: 8,
+    flexWrap: 'wrap',
+    gap: 16,
   },
-  actionButton: {
-    flex: 1,
-    alignItems: 'center',
-    padding: 16,
+  summaryItem: {
+    width: '47%',
+    padding: 12,
+    backgroundColor: 'rgba(0,0,0,0.02)',
     borderRadius: 12,
   },
-  actionText: {
-    color: '#fff',
-    marginTop: 8,
-    fontSize: 13,
+  summaryLabel: {
+    fontSize: 12,
+    opacity: 0.6,
+    marginBottom: 8,
+  },
+  summaryValue: {
+    fontSize: 16,
     fontWeight: '600',
   },
 });

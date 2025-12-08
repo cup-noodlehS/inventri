@@ -76,8 +76,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({
         const { error: userError } = await createUserRecord(
           authData.user.id,
           metadata.username,
-          metadata.full_name,
-          3 // Default: Staff role
+          metadata.full_name
         );
 
         if (userError) {
@@ -118,8 +117,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({
             await createUserRecord(
               authData.user.id,
               metadata.username,
-              metadata.full_name,
-              3
+              metadata.full_name
             );
           }
         } else {

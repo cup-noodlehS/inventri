@@ -99,6 +99,10 @@ export async function createProduct(
       return { data: null, error: new Error('SKU and name are required') };
     }
 
+    if (typeof product.volume_ml !== 'number' || product.volume_ml <= 0) {
+      return { data: null, error: new Error('Volume (ML) must be a positive number') };
+    }
+
     if (typeof product.price !== 'number' || product.price < 0) {
       return { data: null, error: new Error('Price must be a positive number') };
     }
@@ -112,8 +116,8 @@ export async function createProduct(
       ...product,
       sku: product.sku.trim().toUpperCase(),
       name: product.name.trim(),
+      volume_ml: product.volume_ml,
       description: product.description?.trim() || null,
-      barcode_value: product.barcode_value?.trim() || null,
     };
 
     const { data, error } = await supabase
@@ -146,11 +150,15 @@ export async function updateProduct(
       return { data: null, error: new Error('Invalid SKU') };
     }
 
+    if (updates.volume_ml !== undefined && (typeof updates.volume_ml !== 'number' || updates.volume_ml <= 0)) {
+      return { data: null, error: new Error('Volume (ML) must be a positive number') };
+    }
+
     if (updates.price !== undefined && (typeof updates.price !== 'number' || updates.price < 0)) {
       return { data: null, error: new Error('Price must be a positive number') };
     }
 
-    if (updates.min_stock_threshold !== undefined && 
+    if (updates.min_stock_threshold !== undefined &&
         (typeof updates.min_stock_threshold !== 'number' || updates.min_stock_threshold < 0)) {
       return { data: null, error: new Error('Min stock threshold must be a positive number') };
     }
@@ -170,10 +178,6 @@ export async function updateProduct(
 
     if (updates.description !== undefined) {
       sanitizedUpdates.description = updates.description?.trim() || null;
-    }
-
-    if (updates.barcode_value !== undefined) {
-      sanitizedUpdates.barcode_value = updates.barcode_value?.trim() || null;
     }
 
     const sanitizedSku = sku.trim().toUpperCase();

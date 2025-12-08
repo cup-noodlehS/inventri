@@ -13,24 +13,23 @@ export default function ProductsScreen() {
   const insets = useSafeAreaInsets();
   const tintColor = useThemeColor({}, 'tint');
   const textColor = useThemeColor({}, 'text');
-  
+
   const [products, setProducts] = useState<CurrentStock[]>([]);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
-  const [selectedCategory, setSelectedCategory] = useState<string>('All');
-  const [searchTimeout, setSearchTimeout] = useState<number | null>(null);
+  const [searchTimeout, setSearchTimeout] = useState<ReturnType<typeof setTimeout> | null>(null);
 
   const fetchProducts = async () => {
     try {
       setLoading(true);
       const { data, error } = await getProducts();
-      
+
       if (error) {
         console.error('Error fetching products:', error);
         return;
       }
-      
+
       if (data) {
         setProducts(data);
       }
@@ -55,12 +54,12 @@ export default function ProductsScreen() {
       try {
         setLoading(true);
         const { data, error } = await searchProducts(query);
-        
+
         if (error) {
           console.error('Error searching products:', error);
           return;
         }
-        
+
         if (data) {
           setProducts(data);
         }
@@ -86,22 +85,6 @@ export default function ProductsScreen() {
     };
   }, [searchTimeout]);
 
-  const categories = ['All', ...new Set(products.map(p => p.category_name || 'Uncategorized').filter(Boolean))];
-
-  const filteredProducts = products.filter(product => {
-    const matchesCategory = selectedCategory === 'All' || (product.category_name || 'Uncategorized') === selectedCategory;
-    return matchesCategory;
-  });
-
-  const getCategoryColor = (category: string): string => {
-    const colors: Record<string, string> = {
-      Women: '#EC4899',
-      Men: '#3B82F6',
-      Unisex: '#8B5CF6',
-    };
-    return colors[category] || '#6B7280';
-  };
-
   const handleRefresh = async () => {
     setRefreshing(true);
     await fetchProducts();
@@ -109,20 +92,20 @@ export default function ProductsScreen() {
   };
 
   const renderProductCard = ({ item }: { item: CurrentStock }) => {
-    const categoryName = item.category_name || 'Uncategorized';
-    const isLowStock = item.quantity_on_hand < item.min_stock_threshold;
-    
+    const isLowStock = item.quantity_on_hand <= item.min_stock_threshold;
+
     return (
       <TouchableOpacity activeOpacity={0.7}>
         <ThemedView style={[styles.productCard, styles.card]}>
-          {/* Header with SKU and Category */}
+          {/* Header with SKU and Volume */}
           <View style={styles.cardHeader}>
             <View style={styles.skuBadge}>
               <ThemedText style={styles.skuText}>{item.sku}</ThemedText>
             </View>
-            <View style={[styles.categoryBadge, { backgroundColor: getCategoryColor(categoryName) + '20' }]}>
-              <ThemedText style={[styles.categoryText, { color: getCategoryColor(categoryName) }]}>
-                {categoryName}
+            <View style={[styles.volumeBadge, { backgroundColor: tintColor + '20' }]}>
+              <Ionicons name="water-outline" size={12} color={tintColor} />
+              <ThemedText style={[styles.volumeText, { color: tintColor }]}>
+                {item.volume_ml}ml
               </ThemedText>
             </View>
           </View>
@@ -133,16 +116,16 @@ export default function ProductsScreen() {
           {/* Stock and Price Info */}
           <View style={styles.cardFooter}>
             <View style={styles.stockContainer}>
-              <Ionicons 
-                name={isLowStock ? "alert-circle" : "cube"} 
-                size={16} 
-                color={isLowStock ? "#EF4444" : tintColor} 
+              <Ionicons
+                name={isLowStock ? "alert-circle" : "cube"}
+                size={16}
+                color={isLowStock ? "#EF4444" : tintColor}
               />
               <ThemedText style={[styles.stockText, isLowStock && styles.lowStockText]}>
                 {item.quantity_on_hand} in stock
               </ThemedText>
             </View>
-            <ThemedText style={styles.priceText}>₱{item.price.toLocaleString()}</ThemedText>
+            <ThemedText style={styles.priceText}>₱{item.price.toFixed(2)}</ThemedText>
           </View>
 
           {/* Low Stock Warning */}
@@ -165,7 +148,7 @@ export default function ProductsScreen() {
       <View style={styles.header}>
         <ThemedText type="title" style={styles.title}>Products</ThemedText>
         <ThemedText style={styles.subtitle}>
-          {filteredProducts.length} {filteredProducts.length === 1 ? 'product' : 'products'}
+          {products.length} {products.length === 1 ? 'product' : 'products'}
         </ThemedText>
       </View>
 
@@ -192,64 +175,30 @@ export default function ProductsScreen() {
             </TouchableOpacity>
           )}
         </ThemedView>
-
-        {/* Action Buttons */}
-        <View style={styles.actionButtons}>
-          <TouchableOpacity style={[styles.iconButton, { borderColor: tintColor }]}>
-            <Ionicons name="barcode-outline" size={24} color={tintColor} />
-          </TouchableOpacity>
-          <TouchableOpacity style={[styles.iconButton, { borderColor: tintColor }]}>
-            <Ionicons name="add-circle-outline" size={24} color={tintColor} />
-          </TouchableOpacity>
-        </View>
-      </View>
-
-      {/* Category Filter */}
-      <View style={styles.categorySection}>
-        <View style={styles.categoryList}>
-          {categories.map(category => (
-            <TouchableOpacity
-              key={category}
-              style={[
-                styles.categoryChip,
-                selectedCategory === category && { backgroundColor: tintColor }
-              ]}
-              onPress={() => setSelectedCategory(category)}
-            >
-              <ThemedText
-                style={[
-                  styles.categoryChipText,
-                  selectedCategory === category && styles.categoryChipTextActive
-                ]}
-              >
-                {category}
-              </ThemedText>
-            </TouchableOpacity>
-          ))}
-        </View>
       </View>
 
       {/* Products List */}
       {loading && products.length === 0 ? (
         <View style={styles.loadingContainer}>
           <ActivityIndicator size="large" color={tintColor} />
+          <ThemedText style={{ marginTop: 16 }}>Loading products...</ThemedText>
         </View>
       ) : (
         <FlatList
-          data={filteredProducts}
+          data={products}
           renderItem={renderProductCard}
           keyExtractor={item => item.sku}
           contentContainerStyle={styles.list}
           showsVerticalScrollIndicator={false}
           refreshControl={
-            <RefreshControl refreshing={refreshing} onRefresh={handleRefresh} />
+            <RefreshControl refreshing={refreshing} onRefresh={handleRefresh} tintColor={tintColor} />
           }
           ListEmptyComponent={
             <ThemedView style={[styles.emptyState, styles.card]}>
               <Ionicons name="cube-outline" size={64} color="#9CA3AF" />
               <ThemedText style={styles.emptyText}>No products found</ThemedText>
               <ThemedText style={styles.emptySubtext}>
-                Try adjusting your search or filters
+                Try adjusting your search
               </ThemedText>
             </ThemedView>
           }
@@ -277,7 +226,7 @@ const styles = StyleSheet.create({
   },
   searchSection: {
     paddingHorizontal: 16,
-    marginBottom: 12,
+    marginBottom: 16,
   },
   searchContainer: {
     flexDirection: 'row',
@@ -287,46 +236,11 @@ const styles = StyleSheet.create({
     borderRadius: 12,
     borderWidth: 2,
     gap: 12,
-    marginBottom: 12,
   },
   searchInput: {
     flex: 1,
     fontSize: 15,
     padding: 0,
-  },
-  actionButtons: {
-    flexDirection: 'row',
-    gap: 12,
-  },
-  iconButton: {
-    flex: 1,
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    paddingVertical: 12,
-    borderRadius: 12,
-    borderWidth: 2,
-  },
-  categorySection: {
-    paddingHorizontal: 16,
-    marginBottom: 16,
-  },
-  categoryList: {
-    flexDirection: 'row',
-    gap: 8,
-  },
-  categoryChip: {
-    paddingHorizontal: 16,
-    paddingVertical: 8,
-    borderRadius: 20,
-    backgroundColor: 'rgba(0,0,0,0.05)',
-  },
-  categoryChipText: {
-    fontSize: 14,
-    fontWeight: '600',
-  },
-  categoryChipTextActive: {
-    color: '#fff',
   },
   list: {
     paddingHorizontal: 16,
@@ -358,12 +272,15 @@ const styles = StyleSheet.create({
     fontWeight: '600',
     opacity: 0.7,
   },
-  categoryBadge: {
+  volumeBadge: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
     paddingHorizontal: 10,
     paddingVertical: 4,
     borderRadius: 6,
   },
-  categoryText: {
+  volumeText: {
     fontSize: 12,
     fontWeight: '600',
   },

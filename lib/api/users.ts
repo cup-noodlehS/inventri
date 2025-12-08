@@ -8,8 +8,7 @@ import { User } from '@/lib/types';
 export async function createUserRecord(
   userId: string,
   username: string,
-  fullName: string,
-  roleId: number = 3 // Default: Staff role
+  fullName: string
 ): Promise<{
   data: User | null;
   error: any;
@@ -44,7 +43,6 @@ export async function createUserRecord(
         id: userId,
         username: sanitizedUsername,
         full_name: sanitizedFullName,
-        role_id: roleId,
         is_active: true,
         last_login: null,
       })
