@@ -1,13 +1,22 @@
 import { Ionicons } from '@expo/vector-icons';
 import { useCallback, useEffect, useState } from 'react';
-import { ActivityIndicator, FlatList, RefreshControl, StyleSheet, TextInput, TouchableOpacity, View } from 'react-native';
+import { ActivityIndicator, Alert, FlatList, Modal, RefreshControl, ScrollView, StyleSheet, TextInput, TouchableOpacity, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { ThemedText } from '@/components/themed-text';
 import { ThemedView } from '@/components/themed-view';
 import { useThemeColor } from '@/hooks/use-theme-color';
-import { getProducts, searchProducts } from '@/lib/api/products';
-import { CurrentStock } from '@/lib/types';
+import { createProduct, deleteProduct, getProducts, searchProducts, updateProduct } from '@/lib/api/products';
+import { CurrentStock, Product } from '@/lib/types';
+
+type ProductFormData = {
+  sku: string;
+  name: string;
+  volume_ml: string;
+  price: string;
+  min_stock_threshold: string;
+  description: string;
+};
 
 export default function ProductsScreen() {
   const insets = useSafeAreaInsets();
@@ -19,6 +28,19 @@ export default function ProductsScreen() {
   const [refreshing, setRefreshing] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
   const [searchTimeout, setSearchTimeout] = useState<ReturnType<typeof setTimeout> | null>(null);
+
+  // Modal states
+  const [showModal, setShowModal] = useState(false);
+  const [editingProduct, setEditingProduct] = useState<CurrentStock | null>(null);
+  const [formData, setFormData] = useState<ProductFormData>({
+    sku: '',
+    name: '',
+    volume_ml: '',
+    price: '',
+    min_stock_threshold: '5',
+    description: '',
+  });
+  const [saving, setSaving] = useState(false);
 
   const fetchProducts = async () => {
     try {
@@ -91,22 +113,177 @@ export default function ProductsScreen() {
     setRefreshing(false);
   };
 
+  const openCreateModal = () => {
+    setEditingProduct(null);
+    setFormData({
+      sku: '',
+      name: '',
+      volume_ml: '',
+      price: '',
+      min_stock_threshold: '5',
+      description: '',
+    });
+    setShowModal(true);
+  };
+
+  const openEditModal = (product: CurrentStock) => {
+    setEditingProduct(product);
+    setFormData({
+      sku: product.sku,
+      name: product.name,
+      volume_ml: String(product.volume_ml),
+      price: String(product.price),
+      min_stock_threshold: String(product.min_stock_threshold),
+      description: product.description || '',
+    });
+    setShowModal(true);
+  };
+
+  const closeModal = () => {
+    setShowModal(false);
+    setEditingProduct(null);
+    setFormData({
+      sku: '',
+      name: '',
+      volume_ml: '',
+      price: '',
+      min_stock_threshold: '5',
+      description: '',
+    });
+  };
+
+  const handleSave = async () => {
+    // Validation
+    if (!formData.sku.trim() || !formData.name.trim()) {
+      Alert.alert('Validation Error', 'SKU and Name are required.');
+      return;
+    }
+
+    const volumeNum = parseFloat(formData.volume_ml);
+    const priceNum = parseFloat(formData.price);
+    const thresholdNum = parseInt(formData.min_stock_threshold);
+
+    if (isNaN(volumeNum) || volumeNum <= 0) {
+      Alert.alert('Validation Error', 'Volume must be a positive number.');
+      return;
+    }
+
+    if (isNaN(priceNum) || priceNum < 0) {
+      Alert.alert('Validation Error', 'Price must be a valid number.');
+      return;
+    }
+
+    if (isNaN(thresholdNum) || thresholdNum < 0) {
+      Alert.alert('Validation Error', 'Min Stock Threshold must be a valid number.');
+      return;
+    }
+
+    try {
+      setSaving(true);
+
+      if (editingProduct) {
+        // Update existing product
+        const updates: Partial<Product> = {
+          name: formData.name.trim(),
+          volume_ml: volumeNum,
+          price: priceNum,
+          min_stock_threshold: thresholdNum,
+          description: formData.description.trim() || null,
+        };
+
+        const { error } = await updateProduct(editingProduct.sku, updates);
+
+        if (error) {
+          Alert.alert('Error', error.message || 'Failed to update product.');
+          return;
+        }
+
+        Alert.alert('Success', 'Product updated successfully!');
+      } else {
+        // Create new product
+        const newProduct: Omit<Product, 'created_at' | 'updated_at' | 'created_by'> = {
+          sku: formData.sku.trim().toUpperCase(),
+          name: formData.name.trim(),
+          volume_ml: volumeNum,
+          price: priceNum,
+          min_stock_threshold: thresholdNum,
+          description: formData.description.trim() || null,
+        };
+
+        const { error } = await createProduct(newProduct);
+
+        if (error) {
+          Alert.alert('Error', error.message || 'Failed to create product.');
+          return;
+        }
+
+        Alert.alert('Success', 'Product created successfully!');
+      }
+
+      closeModal();
+      await fetchProducts();
+    } catch (error: any) {
+      console.error('Error saving product:', error);
+      Alert.alert('Error', error?.message || 'An unexpected error occurred.');
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const handleDelete = (product: CurrentStock) => {
+    Alert.alert(
+      'Delete Product',
+      `Are you sure you want to delete "${product.name}"? This action cannot be undone.`,
+      [
+        { text: 'Cancel', style: 'cancel' },
+        {
+          text: 'Delete',
+          style: 'destructive',
+          onPress: async () => {
+            try {
+              const { error } = await deleteProduct(product.sku);
+
+              if (error) {
+                Alert.alert('Error', error.message || 'Failed to delete product.');
+                return;
+              }
+
+              Alert.alert('Success', 'Product deleted successfully!');
+              await fetchProducts();
+            } catch (error: any) {
+              console.error('Error deleting product:', error);
+              Alert.alert('Error', error?.message || 'An unexpected error occurred.');
+            }
+          },
+        },
+      ]
+    );
+  };
+
   const renderProductCard = ({ item }: { item: CurrentStock }) => {
     const isLowStock = item.quantity_on_hand <= item.min_stock_threshold;
 
     return (
-      <TouchableOpacity activeOpacity={0.7}>
+      <TouchableOpacity activeOpacity={0.7} onLongPress={() => openEditModal(item)}>
         <ThemedView style={[styles.productCard, styles.card]}>
           {/* Header with SKU and Volume */}
           <View style={styles.cardHeader}>
             <View style={styles.skuBadge}>
               <ThemedText style={styles.skuText}>{item.sku}</ThemedText>
             </View>
-            <View style={[styles.volumeBadge, { backgroundColor: tintColor + '20' }]}>
-              <Ionicons name="water-outline" size={12} color={tintColor} />
-              <ThemedText style={[styles.volumeText, { color: tintColor }]}>
-                {item.volume_ml}ml
-              </ThemedText>
+            <View style={styles.cardHeaderRight}>
+              <View style={[styles.volumeBadge, { backgroundColor: tintColor + '20' }]}>
+                <Ionicons name="water-outline" size={12} color={tintColor} />
+                <ThemedText style={[styles.volumeText, { color: tintColor }]}>
+                  {item.volume_ml}ml
+                </ThemedText>
+              </View>
+              <TouchableOpacity onPress={() => openEditModal(item)} style={styles.iconButton}>
+                <Ionicons name="create-outline" size={20} color={tintColor} />
+              </TouchableOpacity>
+              <TouchableOpacity onPress={() => handleDelete(item)} style={styles.iconButton}>
+                <Ionicons name="trash-outline" size={20} color="#EF4444" />
+              </TouchableOpacity>
             </View>
           </View>
 
@@ -204,6 +381,141 @@ export default function ProductsScreen() {
           }
         />
       )}
+
+      {/* Floating Action Button */}
+      <TouchableOpacity
+        style={[styles.fab, { backgroundColor: tintColor }]}
+        onPress={openCreateModal}
+        activeOpacity={0.8}
+      >
+        <Ionicons name="add" size={28} color="#fff" />
+      </TouchableOpacity>
+
+      {/* Product Form Modal */}
+      <Modal
+        visible={showModal}
+        animationType="slide"
+        transparent={true}
+        onRequestClose={closeModal}
+      >
+        <View style={styles.modalOverlay}>
+          <ThemedView style={styles.modalContent}>
+            <View style={styles.modalHeader}>
+              <ThemedText style={styles.modalTitle}>
+                {editingProduct ? 'Edit Product' : 'Create Product'}
+              </ThemedText>
+              <TouchableOpacity onPress={closeModal}>
+                <Ionicons name="close" size={28} color={tintColor} />
+              </TouchableOpacity>
+            </View>
+
+            <ScrollView style={styles.modalForm} showsVerticalScrollIndicator={false}>
+              {/* SKU */}
+              <View style={styles.formGroup}>
+                <ThemedText style={styles.label}>SKU *</ThemedText>
+                <TextInput
+                  style={[styles.input, { borderColor: tintColor + '40', color: textColor }]}
+                  value={formData.sku}
+                  onChangeText={(text) => setFormData({ ...formData, sku: text })}
+                  placeholder="e.g., DIOR-SAUVAGE-100"
+                  placeholderTextColor="#9CA3AF"
+                  editable={!editingProduct}
+                  autoCapitalize="characters"
+                />
+              </View>
+
+              {/* Name */}
+              <View style={styles.formGroup}>
+                <ThemedText style={styles.label}>Product Name *</ThemedText>
+                <TextInput
+                  style={[styles.input, { borderColor: tintColor + '40', color: textColor }]}
+                  value={formData.name}
+                  onChangeText={(text) => setFormData({ ...formData, name: text })}
+                  placeholder="e.g., Dior Sauvage"
+                  placeholderTextColor="#9CA3AF"
+                />
+              </View>
+
+              {/* Volume */}
+              <View style={styles.formGroup}>
+                <ThemedText style={styles.label}>Volume (ML) *</ThemedText>
+                <TextInput
+                  style={[styles.input, { borderColor: tintColor + '40', color: textColor }]}
+                  value={formData.volume_ml}
+                  onChangeText={(text) => setFormData({ ...formData, volume_ml: text })}
+                  placeholder="e.g., 100"
+                  placeholderTextColor="#9CA3AF"
+                  keyboardType="numeric"
+                />
+              </View>
+
+              {/* Price */}
+              <View style={styles.formGroup}>
+                <ThemedText style={styles.label}>Price (₱) *</ThemedText>
+                <TextInput
+                  style={[styles.input, { borderColor: tintColor + '40', color: textColor }]}
+                  value={formData.price}
+                  onChangeText={(text) => setFormData({ ...formData, price: text })}
+                  placeholder="e.g., 95.00"
+                  placeholderTextColor="#9CA3AF"
+                  keyboardType="decimal-pad"
+                />
+              </View>
+
+              {/* Min Stock Threshold */}
+              <View style={styles.formGroup}>
+                <ThemedText style={styles.label}>Min Stock Threshold *</ThemedText>
+                <TextInput
+                  style={[styles.input, { borderColor: tintColor + '40', color: textColor }]}
+                  value={formData.min_stock_threshold}
+                  onChangeText={(text) => setFormData({ ...formData, min_stock_threshold: text })}
+                  placeholder="e.g., 5"
+                  placeholderTextColor="#9CA3AF"
+                  keyboardType="numeric"
+                />
+              </View>
+
+              {/* Description */}
+              <View style={styles.formGroup}>
+                <ThemedText style={styles.label}>Description</ThemedText>
+                <TextInput
+                  style={[styles.textArea, { borderColor: tintColor + '40', color: textColor }]}
+                  value={formData.description}
+                  onChangeText={(text) => setFormData({ ...formData, description: text })}
+                  placeholder="Optional product description"
+                  placeholderTextColor="#9CA3AF"
+                  multiline
+                  numberOfLines={4}
+                />
+              </View>
+            </ScrollView>
+
+            {/* Modal Actions */}
+            <View style={styles.modalActions}>
+              <TouchableOpacity
+                style={[styles.button, styles.buttonSecondary]}
+                onPress={closeModal}
+                disabled={saving}
+              >
+                <ThemedText style={styles.buttonSecondaryText}>Cancel</ThemedText>
+              </TouchableOpacity>
+              <TouchableOpacity
+                style={[styles.button, styles.buttonPrimary, { backgroundColor: tintColor }]}
+                onPress={handleSave}
+                disabled={saving}
+              >
+                {saving ? (
+                  <ActivityIndicator color="#fff" />
+                ) : (
+                  <ThemedText style={styles.buttonPrimaryText}>
+                    {editingProduct ? 'Update' : 'Create'}
+                  </ThemedText>
+                )}
+              </TouchableOpacity>
+            </View>
+          </ThemedView>
+        </View>
+      </Modal>
     </ThemedView>
   );
 }
@@ -244,7 +556,7 @@ const styles = StyleSheet.create({
   },
   list: {
     paddingHorizontal: 16,
-    paddingBottom: 24,
+    paddingBottom: 80,
   },
   card: {
     borderRadius: 16,
@@ -260,6 +572,11 @@ const styles = StyleSheet.create({
     justifyContent: 'space-between',
     alignItems: 'center',
     marginBottom: 12,
+  },
+  cardHeaderRight: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
   },
   skuBadge: {
     backgroundColor: 'rgba(0,0,0,0.05)',
@@ -283,6 +600,9 @@ const styles = StyleSheet.create({
   volumeText: {
     fontSize: 12,
     fontWeight: '600',
+  },
+  iconButton: {
+    padding: 4,
   },
   productName: {
     fontSize: 18,
@@ -347,5 +667,94 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     alignItems: 'center',
     paddingVertical: 40,
+  },
+  fab: {
+    position: 'absolute',
+    right: 16,
+    bottom: 16,
+    width: 56,
+    height: 56,
+    borderRadius: 28,
+    alignItems: 'center',
+    justifyContent: 'center',
+    elevation: 8,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.3,
+    shadowRadius: 8,
+  },
+  modalOverlay: {
+    flex: 1,
+    backgroundColor: 'rgba(0,0,0,0.5)',
+    justifyContent: 'flex-end',
+  },
+  modalContent: {
+    borderTopLeftRadius: 20,
+    borderTopRightRadius: 20,
+    padding: 20,
+    maxHeight: '90%',
+  },
+  modalHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: 20,
+  },
+  modalTitle: {
+    fontSize: 20,
+    fontWeight: 'bold',
+  },
+  modalForm: {
+    maxHeight: '70%',
+  },
+  formGroup: {
+    marginBottom: 16,
+  },
+  label: {
+    fontSize: 14,
+    fontWeight: '600',
+    marginBottom: 8,
+  },
+  input: {
+    borderWidth: 2,
+    borderRadius: 12,
+    padding: 12,
+    fontSize: 15,
+  },
+  textArea: {
+    borderWidth: 2,
+    borderRadius: 12,
+    padding: 12,
+    fontSize: 15,
+    minHeight: 80,
+    textAlignVertical: 'top',
+  },
+  modalActions: {
+    flexDirection: 'row',
+    gap: 12,
+    marginTop: 20,
+  },
+  button: {
+    flex: 1,
+    padding: 16,
+    borderRadius: 12,
+    alignItems: 'center',
+  },
+  buttonPrimary: {
+    minHeight: 50,
+    justifyContent: 'center',
+  },
+  buttonSecondary: {
+    borderWidth: 2,
+    borderColor: 'rgba(0,0,0,0.1)',
+  },
+  buttonPrimaryText: {
+    color: '#fff',
+    fontSize: 16,
+    fontWeight: 'bold',
+  },
+  buttonSecondaryText: {
+    fontSize: 16,
+    fontWeight: '600',
   },
 });

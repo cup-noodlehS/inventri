@@ -7,8 +7,8 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { ThemedText } from '@/components/themed-text';
 import { ThemedView } from '@/components/themed-view';
-import { getInventoryLedger } from '@/lib/api/transactions';
 import { useThemeColor } from '@/hooks/use-theme-color';
+import { getInventoryLedger } from '@/lib/api/transactions';
 import { InventoryLedger } from '@/lib/types';
 import { exportInventoryLedgerToCSV, exportInventoryLedgerToExcel, exportInventoryLedgerToPDF } from '@/lib/utils/exportData';
 
@@ -462,9 +462,11 @@ const styles = StyleSheet.create({
   summaryContent: {
     alignItems: 'center',
     marginBottom: 12,
+    width: '100%',
+    paddingHorizontal: 24,
   },
   summaryValue: {
-    fontSize: 48,
+    fontSize: 32,
     fontWeight: 'bold',
     marginBottom: 4,
   },
