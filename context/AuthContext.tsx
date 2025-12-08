@@ -1,7 +1,7 @@
 import { createUserRecord, updateLastLogin, userRecordExists } from '@/lib/api/users';
 import { supabase } from '@/lib/supabase';
 import { User } from '@supabase/supabase-js';
-import React, { createContext, useContext, useEffect, useState } from 'react';
+import React, { createContext, useContext, useEffect, useMemo, useState } from 'react';
 
 interface AuthContextType {
   user: User | null;
@@ -22,6 +22,28 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({
 }) => {
   const [user, setUser] = useState<User | null>(null);
   const [loading, setLoading] = useState<boolean>(true);
+  const guestUser = useMemo(
+    () =>
+      ({
+        id: 'guest-user',
+        aud: 'authenticated',
+        role: 'authenticated',
+        email: 'guest@example.com',
+        email_confirmed_at: new Date().toISOString(),
+        phone: '',
+        confirmed_at: new Date().toISOString(),
+        last_sign_in_at: new Date().toISOString(),
+        app_metadata: {},
+        user_metadata: {
+          username: 'guest',
+          full_name: 'Guest User',
+        },
+        identities: [],
+        created_at: new Date().toISOString(),
+        updated_at: new Date().toISOString(),
+      } as unknown as User),
+    []
+  );
 
   useEffect(() => {
     const checkSession = async () => {
@@ -29,9 +51,10 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({
         const {
           data: { session },
         } = await supabase.auth.getSession();
-        setUser(session?.user ?? null);
+        setUser(session?.user ?? guestUser);
       } catch (error) {
         console.error('Error checking session:', error);
+        setUser(guestUser);
       } finally {
         setLoading(false);
       }
@@ -43,7 +66,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({
     const {
       data: { subscription },
     } = supabase.auth.onAuthStateChange((_event, session) => {
-      setUser(session?.user ?? null);
+      setUser(session?.user ?? guestUser);
       setLoading(false);
     });
 
@@ -137,8 +160,10 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({
   const signOut = async (): Promise<void> => {
     try {
       await supabase.auth.signOut();
+      setUser(guestUser);
     } catch (error) {
       console.error('Error signing out:', error);
+      setUser(guestUser);
     }
   };
 
@@ -160,4 +185,3 @@ export const useAuth = (): AuthContextType => {
   }
   return context;
 };
-

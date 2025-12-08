@@ -1,7 +1,7 @@
 import { Ionicons } from '@expo/vector-icons';
 import { router } from 'expo-router';
-import { useState } from 'react';
-import { Alert, ScrollView, StyleSheet, Switch, TextInput, TouchableOpacity, View } from 'react-native';
+import { useEffect, useState } from 'react';
+import { ActivityIndicator, Alert, ScrollView, StyleSheet, Switch, TextInput, TouchableOpacity, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { ThemedText } from '@/components/themed-text';
@@ -9,6 +9,8 @@ import { ThemedView } from '@/components/themed-view';
 import { useAuth } from '@/context/AuthContext';
 import { Radii, Spacing } from '@/constants/theme';
 import { useThemeColor } from '@/hooks/use-theme-color';
+import { getUserPreferences, upsertUserPreferences } from '@/lib/api/preferences';
+import { TransactionType } from '@/lib/types';
 
 export default function SettingsScreen() {
   const { user, signOut } = useAuth();
@@ -21,6 +23,13 @@ export default function SettingsScreen() {
   const mutedColor = useThemeColor({}, 'textMuted');
   const dangerColor = useThemeColor({}, 'danger');
   const [barcodeType, setBarcodeType] = useState('Code128');
+  const [lowStockThreshold, setLowStockThreshold] = useState('5');
+  const [defaultTransactionType, setDefaultTransactionType] = useState<TransactionType>('Stock In');
+  const [notifyLowStock, setNotifyLowStock] = useState(true);
+  const [notifyShipmentDelay, setNotifyShipmentDelay] = useState(true);
+  const [themePreference, setThemePreference] = useState<'system' | 'light' | 'dark'>('system');
+  const [loadingPrefs, setLoadingPrefs] = useState(false);
+  const [savingPrefs, setSavingPrefs] = useState(false);
 
   const handleLogout = () => {
     Alert.alert(
@@ -47,6 +56,74 @@ export default function SettingsScreen() {
   const username = user?.user_metadata?.username || 'N/A';
   const fullName = user?.user_metadata?.full_name || 'N/A';
   const userEmail = user?.email || 'N/A';
+  const transactionTypes: TransactionType[] = ['Stock In', 'Stock Out', 'Adjustment', 'Sale', 'Transfer'];
+  const themeOptions: ('system' | 'light' | 'dark')[] = ['system', 'light', 'dark'];
+
+  useEffect(() => {
+    if (!user?.id) {
+      return;
+    }
+
+    let isMounted = true;
+    const load = async () => {
+      try {
+        setLoadingPrefs(true);
+        const { data, error } = await getUserPreferences(user.id);
+        if (!isMounted || error || !data) {
+          if (error) {
+            console.error('Preferences load error:', error);
+          }
+          return;
+        }
+        setBarcodeType(data.default_barcode_type || 'Code128');
+        setLowStockThreshold(String(data.low_stock_threshold ?? 5));
+        setDefaultTransactionType(data.default_transaction_type as TransactionType);
+        setNotifyLowStock(Boolean(data.notify_low_stock));
+        setNotifyShipmentDelay(Boolean(data.notify_shipment_delay));
+        setThemePreference(data.theme_preference);
+      } finally {
+        if (isMounted) {
+          setLoadingPrefs(false);
+        }
+      }
+    };
+
+    load();
+
+    return () => {
+      isMounted = false;
+    };
+  }, [user?.id]);
+
+  const handleSavePreferences = async () => {
+    if (!user?.id) {
+      return;
+    }
+
+    const parsedThreshold = Number(lowStockThreshold) || 0;
+
+    try {
+      setSavingPrefs(true);
+      const { error } = await upsertUserPreferences(user.id, {
+        default_barcode_type: barcodeType,
+        default_transaction_type: defaultTransactionType,
+        low_stock_threshold: parsedThreshold,
+        notify_low_stock: notifyLowStock,
+        notify_shipment_delay: notifyShipmentDelay,
+        theme_preference: themePreference,
+      });
+
+      if (error) {
+        console.error('Save prefs error:', error);
+        Alert.alert('Error', error.message || 'Unable to save preferences.');
+        return;
+      }
+
+      Alert.alert('Saved', 'Preferences updated successfully.');
+    } finally {
+      setSavingPrefs(false);
+    }
+  };
 
   return (
     <ThemedView style={[styles.container, { paddingTop: insets.top + Spacing.md }]}>
@@ -84,6 +161,13 @@ export default function SettingsScreen() {
             </ThemedText>
           </View>
 
+          {loadingPrefs && (
+            <View style={styles.preferenceLoading}>
+              <ActivityIndicator size="small" color={tintColor} />
+              <ThemedText style={{ color: mutedColor }}>Loading preferences…</ThemedText>
+            </View>
+          )}
+
           <View style={styles.settingItem}>
             <ThemedText style={styles.settingLabel}>Minimum Stock Threshold</ThemedText>
             <TextInput 
@@ -96,9 +180,39 @@ export default function SettingsScreen() {
                 },
               ]} 
               keyboardType="numeric" 
-              defaultValue="5" 
+              value={lowStockThreshold}
+              onChangeText={setLowStockThreshold}
               placeholderTextColor={mutedColor}
             />
+          </View>
+
+          <View style={styles.settingItem}>
+            <ThemedText style={styles.settingLabel}>Default Transaction Type</ThemedText>
+            <View style={styles.chipGroup}>
+              {transactionTypes.map((type) => {
+                const isActive = defaultTransactionType === type;
+                return (
+                  <TouchableOpacity
+                    key={type}
+                    style={[
+                      styles.preferenceChip,
+                      {
+                        backgroundColor: isActive ? tintColor : surfaceAlt,
+                        borderColor,
+                      },
+                    ]}
+                    onPress={() => setDefaultTransactionType(type)}>
+                    <ThemedText
+                      style={[
+                        styles.preferenceChipText,
+                        { color: isActive ? '#fff' : textColor },
+                      ]}>
+                      {type}
+                    </ThemedText>
+                  </TouchableOpacity>
+                );
+              })}
+            </View>
           </View>
 
           <View style={styles.settingItem}>
@@ -114,6 +228,76 @@ export default function SettingsScreen() {
               <ThemedText>QR</ThemedText>
             </View>
           </View>
+
+          <View style={styles.settingItem}>
+            <ThemedText style={styles.settingLabel}>Notifications</ThemedText>
+            <View style={styles.switchRow}>
+              <ThemedText>Low Stock Alerts</ThemedText>
+              <Switch
+                value={notifyLowStock}
+                onValueChange={setNotifyLowStock}
+                trackColor={{ false: borderColor, true: tintColor }}
+                thumbColor="#fff"
+              />
+            </View>
+            <View style={styles.switchRow}>
+              <ThemedText>Shipment Delays</ThemedText>
+              <Switch
+                value={notifyShipmentDelay}
+                onValueChange={setNotifyShipmentDelay}
+                trackColor={{ false: borderColor, true: tintColor }}
+                thumbColor="#fff"
+              />
+            </View>
+          </View>
+
+          <View style={styles.settingItem}>
+            <ThemedText style={styles.settingLabel}>Theme Preference</ThemedText>
+            <View style={styles.chipGroup}>
+              {themeOptions.map((option) => {
+                const isActive = themePreference === option;
+                return (
+                  <TouchableOpacity
+                    key={option}
+                    style={[
+                      styles.preferenceChip,
+                      {
+                        backgroundColor: isActive ? tintColor : surfaceAlt,
+                        borderColor,
+                      },
+                    ]}
+                    onPress={() => setThemePreference(option)}>
+                    <ThemedText
+                      style={[
+                        styles.preferenceChipText,
+                        { color: isActive ? '#fff' : textColor },
+                      ]}>
+                      {option.charAt(0).toUpperCase() + option.slice(1)}
+                    </ThemedText>
+                  </TouchableOpacity>
+                );
+              })}
+            </View>
+          </View>
+
+          <TouchableOpacity
+            style={[
+              styles.saveButton,
+              { backgroundColor: tintColor },
+              (savingPrefs || loadingPrefs) && { opacity: 0.7 },
+            ]}
+            onPress={handleSavePreferences}
+            disabled={savingPrefs || loadingPrefs}
+          >
+            {savingPrefs ? (
+              <ActivityIndicator size="small" color="#fff" />
+            ) : (
+              <Ionicons name="save-outline" size={20} color="#fff" />
+            )}
+            <ThemedText style={styles.saveButtonText}>
+              {savingPrefs ? 'Saving…' : 'Save Preferences'}
+            </ThemedText>
+          </TouchableOpacity>
         </ThemedView>
 
         {/* Logout Button */}
@@ -211,6 +395,12 @@ const styles = StyleSheet.create({
     marginTop: Spacing.xs,
     gap: Spacing.sm,
   },
+  switchRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    marginTop: Spacing.sm,
+  },
   logoutButton: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -224,6 +414,42 @@ const styles = StyleSheet.create({
   },
   logoutButtonText: {
     fontSize: 16,
+    fontWeight: '600',
+  },
+  chipGroup: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: Spacing.sm,
+    marginTop: Spacing.sm,
+  },
+  preferenceChip: {
+    borderRadius: Radii.pill,
+    borderWidth: 1,
+    paddingHorizontal: Spacing.md,
+    paddingVertical: Spacing.xs,
+  },
+  preferenceChipText: {
+    fontSize: 13,
+    fontWeight: '600',
+    textTransform: 'capitalize',
+  },
+  preferenceLoading: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: Spacing.sm,
+    marginBottom: Spacing.sm,
+  },
+  saveButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderRadius: Radii.md,
+    paddingVertical: Spacing.sm,
+    gap: Spacing.sm,
+    marginTop: Spacing.md,
+  },
+  saveButtonText: {
+    color: '#fff',
     fontWeight: '600',
   },
 });

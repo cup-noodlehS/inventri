@@ -24,7 +24,7 @@ export async function createTransaction(
       return { data: null, error: new Error('At least one transaction item is required') };
     }
 
-    if (!['Stock In', 'Stock Out', 'Adjustment'].includes(input.transaction_type)) {
+    if (!['Stock In', 'Stock Out', 'Adjustment', 'Sale', 'Transfer'].includes(input.transaction_type)) {
       return { data: null, error: new Error('Invalid transaction type') };
     }
 
@@ -81,10 +81,12 @@ export async function createTransaction(
 
       // Normalize quantity: Stock Out becomes negative, Stock In positive, Adjustment stays as-is
       let quantity = item.quantity;
-      if (input.transaction_type === 'Stock Out') {
+      if (input.transaction_type === 'Stock Out' || input.transaction_type === 'Sale') {
         quantity = -Math.abs(item.quantity);
       } else if (input.transaction_type === 'Stock In') {
         quantity = Math.abs(item.quantity);
+      } else if (input.transaction_type === 'Transfer') {
+        quantity = item.quantity;
       }
 
       const totalAmount = quantity * product.price;
@@ -215,4 +217,3 @@ export async function getRecentTransactions(
     return { data: null, error };
   }
 }
-

@@ -11,11 +11,10 @@ import { ThemedView } from '@/components/themed-view';
 import { useAuth } from '@/context/AuthContext';
 import { Radii, Spacing } from '@/constants/theme';
 import { useThemeColor } from '@/hooks/use-theme-color';
+import { getUserPreferences } from '@/lib/api/preferences';
 import { getProducts } from '@/lib/api/products';
 import { createTransaction, getRecentTransactions, TransactionWithItems } from '@/lib/api/transactions';
-import { CreateTransactionInput, CurrentStock } from '@/lib/types';
-
-type TransactionType = 'Stock In' | 'Stock Out' | 'Adjustment';
+import { CreateTransactionInput, CurrentStock, TransactionType, UserPreferences } from '@/lib/types';
 
 export default function TransactionsScreen() {
   const insets = useSafeAreaInsets();
@@ -27,6 +26,7 @@ export default function TransactionsScreen() {
   const successColor = useThemeColor({}, 'success');
   const dangerColor = useThemeColor({}, 'danger');
   const warningColor = useThemeColor({}, 'warning');
+  const accentColor = useThemeColor({}, 'accent');
   const params = useLocalSearchParams<{ type?: string }>();
   const { user } = useAuth();
   
@@ -40,6 +40,8 @@ export default function TransactionsScreen() {
   const [submitting, setSubmitting] = useState(false);
   const [date, setDate] = useState(new Date());
   const [showScanner, setShowScanner] = useState(false);
+  const [preferences, setPreferences] = useState<UserPreferences | null>(null);
+  const [loadingPrefs, setLoadingPrefs] = useState(false);
 
   useEffect(() => {
     fetchProducts();
@@ -54,6 +56,41 @@ export default function TransactionsScreen() {
       setActiveTab(params.type as TransactionType);
     }
   }, [params.type]);
+
+  useEffect(() => {
+    if (!user?.id) {
+      return;
+    }
+
+    let isMounted = true;
+    const loadPreferences = async () => {
+      try {
+        setLoadingPrefs(true);
+        const { data, error } = await getUserPreferences(user.id);
+        if (!isMounted) {
+          return;
+        }
+        if (error) {
+          console.error('Preferences error:', error);
+          return;
+        }
+        setPreferences(data);
+        if (!params.type && data?.default_transaction_type) {
+          setActiveTab(data.default_transaction_type as TransactionType);
+        }
+      } finally {
+        if (isMounted) {
+          setLoadingPrefs(false);
+        }
+      }
+    };
+
+    loadPreferences();
+
+    return () => {
+      isMounted = false;
+    };
+  }, [user?.id, params.type]);
 
   const fetchProducts = async () => {
     try {
@@ -144,7 +181,7 @@ export default function TransactionsScreen() {
         items: [
           {
             sku: selectedProduct,
-            quantity: activeTab === 'Stock Out' ? -quantity : quantity,
+            quantity,
           },
         ],
       };
@@ -183,6 +220,11 @@ export default function TransactionsScreen() {
       case 'Stock Out':
         return 'remove-circle';
       case 'Adjustment':
+      case 'Transfer':
+        return 'swap-horizontal';
+      case 'Sale':
+        return 'cart-outline';
+      default:
         return 'swap-horizontal';
     }
   };
@@ -192,7 +234,10 @@ export default function TransactionsScreen() {
       case 'Stock In':
         return successColor;
       case 'Stock Out':
+      case 'Sale':
         return dangerColor;
+      case 'Transfer':
+        return accentColor;
       case 'Adjustment':
       default:
         return warningColor;
@@ -229,16 +274,25 @@ export default function TransactionsScreen() {
     <ThemedView style={[styles.container, { paddingTop: insets.top + Spacing.md }]}>
       {/* Header */}
       <View style={styles.header}>
-        <ThemedText type="title" style={styles.title}>Transactions</ThemedText>
-        <ThemedText style={[styles.subtitle, { color: mutedColor }]}>Manage your inventory</ThemedText>
-      </View>
+      <ThemedText type="title" style={styles.title}>Transactions</ThemedText>
+      <ThemedText style={[styles.subtitle, { color: mutedColor }]}>Manage your inventory</ThemedText>
+    </View>
 
-      {/* Tabs */}
-      <Tabs
-        tabs={['Stock In', 'Stock Out', 'Adjustment']}
-        activeTab={activeTab}
-        onTabPress={setActiveTab}
-      />
+    {/* Tabs */}
+    <Tabs
+      tabs={['Stock In', 'Stock Out', 'Adjustment', 'Sale', 'Transfer']}
+      activeTab={activeTab}
+      onTabPress={setActiveTab}
+    />
+    {loadingPrefs ? (
+      <ThemedText style={[styles.preferenceHint, { color: mutedColor }]}>
+        Loading your preferred defaults…
+      </ThemedText>
+    ) : preferences ? (
+      <ThemedText style={[styles.preferenceHint, { color: mutedColor }]}>
+        Default transaction type: {preferences.default_transaction_type}
+      </ThemedText>
+    ) : null}
 
       <ScrollView style={styles.content} showsVerticalScrollIndicator={false}>
         {/* Transaction Form */}
@@ -699,5 +753,10 @@ const styles = StyleSheet.create({
   transactionQuantity: {
     fontSize: 20,
     fontWeight: '700',
+  },
+  preferenceHint: {
+    fontSize: 12,
+    marginTop: Spacing.xs,
+    marginBottom: Spacing.xs,
   },
 });

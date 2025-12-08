@@ -16,8 +16,9 @@ import { ThemedView } from '@/components/themed-view';
 import { Radii, Spacing } from '@/constants/theme';
 import { useThemeColor } from '@/hooks/use-theme-color';
 import { getProducts } from '@/lib/api/products';
+import { getShipments } from '@/lib/api/shipments';
 import { supabase } from '@/lib/supabase';
-import { CurrentStock } from '@/lib/types';
+import { CurrentStock, Shipment } from '@/lib/types';
 
 type TransactionShortcut = 'Stock In' | 'Stock Out' | 'Adjustment';
 
@@ -33,7 +34,9 @@ export default function HomeScreen() {
   const insets = useSafeAreaInsets();
 
   const [products, setProducts] = useState<CurrentStock[]>([]);
+  const [shipments, setShipments] = useState<Shipment[]>([]);
   const [loading, setLoading] = useState(true);
+  const [loadingShipments, setLoadingShipments] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
 
   const fetchProducts = async () => {
@@ -58,8 +61,25 @@ export default function HomeScreen() {
     }
   };
 
+  const fetchShipments = async () => {
+    try {
+      setLoadingShipments(true);
+      const { data, error } = await getShipments({ limit: 10 });
+      if (error) {
+        console.error('Error fetching shipments:', error);
+        return;
+      }
+      setShipments(data ?? []);
+    } catch (error) {
+      console.error('Error in fetchShipments:', error);
+    } finally {
+      setLoadingShipments(false);
+    }
+  };
+
   useEffect(() => {
     fetchProducts();
+    fetchShipments();
   }, []);
 
   useEffect(() => {
@@ -74,8 +94,18 @@ export default function HomeScreen() {
       )
       .subscribe();
 
+    const shipmentsChannel = supabase
+      .channel('shipment-updates')
+      .on(
+        'postgres_changes',
+        { event: '*', schema: 'public', table: 'shipment' },
+        () => fetchShipments()
+      )
+      .subscribe();
+
     return () => {
       subscription.unsubscribe();
+      shipmentsChannel.unsubscribe();
     };
   }, []);
 
@@ -111,6 +141,22 @@ export default function HomeScreen() {
 
     return { totalStock, lowStockProducts, totalProducts, totalValue, categoryStats };
   }, [products]);
+
+  const shipmentSummary = useMemo(() => {
+    const inbound = shipments.filter((s) => s.direction === 'inbound');
+    const outbound = shipments.filter((s) => s.direction === 'outbound');
+    const delayed = shipments.filter((s) => s.status === 'delayed');
+    const nextEta = shipments
+      .filter((s) => s.eta)
+      .sort((a, b) => new Date(a.eta || '').getTime() - new Date(b.eta || '').getTime())[0];
+
+    return {
+      inboundCount: inbound.length,
+      outboundCount: outbound.length,
+      delayedCount: delayed.length,
+      nextEta: nextEta?.eta ?? null,
+    };
+  }, [shipments]);
 
   if (loading) {
     return (
@@ -238,6 +284,51 @@ export default function HomeScreen() {
               </View>
             </View>
           ))}
+        </ThemedView>
+
+        <ThemedView style={[styles.section, styles.card, { backgroundColor: surface, borderColor }]}>
+          <View style={styles.sectionHeader}>
+            <Ionicons name="cube-outline" size={20} color={accent} />
+            <ThemedText type="subtitle" style={styles.sectionTitle}>
+              Logistics Snapshot
+            </ThemedText>
+          </View>
+          {loadingShipments ? (
+            <ThemedText style={{ color: mutedText }}>Loading shipments…</ThemedText>
+          ) : shipments.length === 0 ? (
+            <ThemedText style={{ color: mutedText }}>No shipments tracked yet.</ThemedText>
+          ) : (
+            <>
+              <View style={styles.logisticsRow}>
+                <View>
+                  <ThemedText style={styles.logisticsValue}>{shipmentSummary.inboundCount}</ThemedText>
+                  <ThemedText style={[styles.logisticsLabel, { color: mutedText }]}>
+                    Inbound
+                  </ThemedText>
+                </View>
+                <View>
+                  <ThemedText style={styles.logisticsValue}>{shipmentSummary.outboundCount}</ThemedText>
+                  <ThemedText style={[styles.logisticsLabel, { color: mutedText }]}>
+                    Outbound
+                  </ThemedText>
+                </View>
+                <View>
+                  <ThemedText style={styles.logisticsValue}>{shipmentSummary.delayedCount}</ThemedText>
+                  <ThemedText style={[styles.logisticsLabel, { color: mutedText }]}>
+                    Delayed
+                  </ThemedText>
+                </View>
+              </View>
+              {shipmentSummary.nextEta && (
+                <View style={styles.logisticsEta}>
+                  <Ionicons name="calendar-outline" size={16} color={mutedText} />
+                  <ThemedText style={[styles.logisticsEtaText, { color: mutedText }]}>
+                    Next delivery ETA {new Date(shipmentSummary.nextEta).toLocaleDateString()}
+                  </ThemedText>
+                </View>
+              )}
+            </>
+          )}
         </ThemedView>
 
         <ThemedView style={styles.quickActions}>
@@ -411,5 +502,28 @@ const styles = StyleSheet.create({
     marginTop: Spacing.xs,
     fontSize: 13,
     fontWeight: '600',
+  },
+  logisticsRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    marginBottom: Spacing.sm,
+  },
+  logisticsValue: {
+    fontSize: 22,
+    fontWeight: '700',
+    textAlign: 'center',
+  },
+  logisticsLabel: {
+    fontSize: 12,
+    textAlign: 'center',
+  },
+  logisticsEta: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: Spacing.xs,
+    marginTop: Spacing.xs,
+  },
+  logisticsEtaText: {
+    fontSize: 12,
   },
 });
