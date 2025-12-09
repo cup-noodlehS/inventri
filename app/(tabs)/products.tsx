@@ -154,8 +154,13 @@ export default function ProductsScreen() {
 
   const handleSave = async () => {
     // Validation
-    if (!formData.sku.trim() || !formData.name.trim()) {
-      Alert.alert('Validation Error', 'SKU and Name are required.');
+    if (!editingProduct && !formData.sku.trim()) {
+      Alert.alert('Validation Error', 'SKU is required.');
+      return;
+    }
+
+    if (!formData.name.trim()) {
+      Alert.alert('Validation Error', 'Product Name is required.');
       return;
     }
 
@@ -416,16 +421,27 @@ export default function ProductsScreen() {
             >
               {/* SKU */}
               <View style={styles.formGroup}>
-                <ThemedText style={styles.label}>SKU *</ThemedText>
-                <TextInput
-                  style={[styles.input, { borderColor: tintColor + '40', color: textColor }]}
-                  value={formData.sku}
-                  onChangeText={(text) => setFormData({ ...formData, sku: text })}
-                  placeholder="e.g., DIOR-SAUVAGE-100"
-                  placeholderTextColor="#9CA3AF"
-                  editable={!editingProduct}
-                  autoCapitalize="characters"
-                />
+                <ThemedText style={styles.label}>
+                  SKU {!editingProduct && '*'}
+                  {editingProduct && (
+                    <ThemedText style={styles.readOnlyLabel}> (Cannot be changed)</ThemedText>
+                  )}
+                </ThemedText>
+                {editingProduct ? (
+                  <View style={[styles.input, styles.skuReadOnlyContainer, { borderColor: '#9CA3AF' }]}>
+                    <Ionicons name="lock-closed" size={16} color="#6B7280" style={styles.lockIcon} />
+                    <ThemedText style={styles.skuReadOnlyText}>{formData.sku}</ThemedText>
+                  </View>
+                ) : (
+                  <TextInput
+                    style={[styles.input, { borderColor: tintColor + '40', color: textColor }]}
+                    value={formData.sku}
+                    onChangeText={(text) => setFormData({ ...formData, sku: text })}
+                    placeholder="e.g., DIOR-SAUVAGE-100"
+                    placeholderTextColor="#9CA3AF"
+                    autoCapitalize="characters"
+                  />
+                )}
               </View>
 
               {/* Name */}
@@ -729,6 +745,27 @@ const styles = StyleSheet.create({
     borderRadius: 12,
     padding: 12,
     fontSize: 15,
+  },
+  skuReadOnlyContainer: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: 'rgba(0,0,0,0.03)',
+    opacity: 0.7,
+  },
+  lockIcon: {
+    marginRight: 8,
+  },
+  skuReadOnlyText: {
+    fontSize: 15,
+    fontWeight: '600',
+    opacity: 0.6,
+    flex: 1,
+  },
+  readOnlyLabel: {
+    fontSize: 12,
+    fontWeight: '400',
+    opacity: 0.6,
+    fontStyle: 'italic',
   },
   textArea: {
     borderWidth: 2,
