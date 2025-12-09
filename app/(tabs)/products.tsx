@@ -42,6 +42,30 @@ export default function ProductsScreen() {
   });
   const [saving, setSaving] = useState(false);
 
+  // Guard: allow only whole numbers (empty string is allowed while typing)
+  const allowNumericInput = (text: string, fieldLabel: string): boolean => {
+    if (text === '') {
+      return true;
+    }
+    if (/^[0-9]+$/.test(text)) {
+      return true;
+    }
+    Alert.alert('Invalid input', `${fieldLabel} accepts numbers only.`);
+    return false;
+  };
+
+  // Guard: allow numbers with a single decimal point (empty string allowed)
+  const allowDecimalInput = (text: string, fieldLabel: string): boolean => {
+    if (text === '') {
+      return true;
+    }
+    if (/^[0-9]*\\.?[0-9]*$/.test(text)) {
+      return true;
+    }
+    Alert.alert('Invalid input', `${fieldLabel} accepts numeric values (one decimal point max).`);
+    return false;
+  };
+
   const fetchProducts = async () => {
     try {
       setLoading(true);
@@ -462,7 +486,12 @@ export default function ProductsScreen() {
                 <TextInput
                   style={[styles.input, { borderColor: tintColor + '40', color: textColor }]}
                   value={formData.volume_ml}
-                  onChangeText={(text) => setFormData({ ...formData, volume_ml: text })}
+                  onChangeText={(text) => {
+                    if (!allowNumericInput(text, 'Volume')) {
+                      return;
+                    }
+                    setFormData({ ...formData, volume_ml: text });
+                  }}
                   placeholder="e.g., 100"
                   placeholderTextColor="#9CA3AF"
                   keyboardType="numeric"
@@ -475,7 +504,12 @@ export default function ProductsScreen() {
                 <TextInput
                   style={[styles.input, { borderColor: tintColor + '40', color: textColor }]}
                   value={formData.price}
-                  onChangeText={(text) => setFormData({ ...formData, price: text })}
+                  onChangeText={(text) => {
+                    if (!allowDecimalInput(text, 'Price')) {
+                      return;
+                    }
+                    setFormData({ ...formData, price: text });
+                  }}
                   placeholder="e.g., 95.00"
                   placeholderTextColor="#9CA3AF"
                   keyboardType="decimal-pad"
@@ -488,7 +522,12 @@ export default function ProductsScreen() {
                 <TextInput
                   style={[styles.input, { borderColor: tintColor + '40', color: textColor }]}
                   value={formData.min_stock_threshold}
-                  onChangeText={(text) => setFormData({ ...formData, min_stock_threshold: text })}
+                  onChangeText={(text) => {
+                    if (!allowNumericInput(text, 'Min Stock Threshold')) {
+                      return;
+                    }
+                    setFormData({ ...formData, min_stock_threshold: text });
+                  }}
                   placeholder="e.g., 5"
                   placeholderTextColor="#9CA3AF"
                   keyboardType="numeric"
