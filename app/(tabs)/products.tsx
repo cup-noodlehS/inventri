@@ -3,6 +3,8 @@ import { useCallback, useEffect, useState } from 'react';
 import { ActivityIndicator, Alert, FlatList, Modal, RefreshControl, ScrollView, StyleSheet, TextInput, TouchableOpacity, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
+import { BarcodeGenerator } from '@/components/barcode-generator';
+import { BarcodeScanner } from '@/components/barcode-scanner';
 import { ThemedText } from '@/components/themed-text';
 import { ThemedView } from '@/components/themed-view';
 import { useThemeColor } from '@/hooks/use-theme-color';
@@ -41,6 +43,11 @@ export default function ProductsScreen() {
     description: '',
   });
   const [saving, setSaving] = useState(false);
+  
+  // Barcode states
+  const [showBarcodeGenerator, setShowBarcodeGenerator] = useState(false);
+  const [barcodeProduct, setBarcodeProduct] = useState<CurrentStock | null>(null);
+  const [showBarcodeScanner, setShowBarcodeScanner] = useState(false);
 
   const fetchProducts = async () => {
     try {
@@ -260,6 +267,62 @@ export default function ProductsScreen() {
     );
   };
 
+  const handleShowBarcode = (product: CurrentStock) => {
+    setBarcodeProduct(product);
+    setShowBarcodeGenerator(true);
+  };
+
+  const handleBarcodeScan = (scannedData: string) => {
+    // Barcode format: SKU-VOLUMEml-UNIT (e.g., "LE-MALE-65-65ml-001")
+    // Extract base barcode (SKU + volume) by removing unit number if present
+    const unitMatch = scannedData.match(/-(\d{3})$/); // Match -001, -002, etc.
+    const baseBarcode = unitMatch ? scannedData.replace(/-(\d{3})$/, '') : scannedData;
+    
+    // Try to find product by base barcode match (SKU + volume)
+    const productByBarcode = products.find(
+      p => `${p.sku}-${p.volume_ml}ml` === baseBarcode
+    );
+    
+    if (productByBarcode) {
+      const unitNum = unitMatch ? unitMatch[1] : null;
+      const message = unitNum 
+        ? `Found: ${productByBarcode.name} (${productByBarcode.volume_ml}ml) - Unit #${unitNum}`
+        : `Found: ${productByBarcode.name} (${productByBarcode.volume_ml}ml)`;
+      setSearchQuery(productByBarcode.sku);
+      handleSearch(productByBarcode.sku);
+      Alert.alert('Product Found', message);
+      return;
+    }
+
+    // Try to extract SKU and volume from barcode
+    const volumeMatch = baseBarcode.match(/-(\d+)ml$/);
+    const skuPart = volumeMatch ? baseBarcode.replace(/-(\d+)ml$/, '') : baseBarcode;
+    
+    // Try to find by SKU only
+    const productBySku = products.find(p => p.sku.toLowerCase() === skuPart.toLowerCase());
+    
+    if (productBySku) {
+      setSearchQuery(productBySku.sku);
+      handleSearch(productBySku.sku);
+      Alert.alert('Product Found', `Found: ${productBySku.name}`);
+      return;
+    }
+
+    // Try to find by partial match in SKU or name
+    const productMatch = products.find(
+      p => p.sku.toLowerCase().includes(scannedData.toLowerCase()) ||
+           p.name.toLowerCase().includes(scannedData.toLowerCase())
+    );
+
+    if (productMatch) {
+      setSearchQuery(productMatch.sku);
+      handleSearch(productMatch.sku);
+      Alert.alert('Product Found', `Found: ${productMatch.name}`);
+    } else {
+      Alert.alert('Product Not Found', `No product found with barcode: ${scannedData}`);
+    }
+  };
+
   const renderProductCard = ({ item }: { item: CurrentStock }) => {
     const isLowStock = item.quantity_on_hand <= item.min_stock_threshold;
 
@@ -278,6 +341,9 @@ export default function ProductsScreen() {
                   {item.volume_ml}ml
                 </ThemedText>
               </View>
+              <TouchableOpacity onPress={() => handleShowBarcode(item)} style={styles.iconButton}>
+                <Ionicons name="barcode-outline" size={20} color={tintColor} />
+              </TouchableOpacity>
               <TouchableOpacity onPress={() => openEditModal(item)} style={styles.iconButton}>
                 <Ionicons name="create-outline" size={20} color={tintColor} />
               </TouchableOpacity>
@@ -352,6 +418,12 @@ export default function ProductsScreen() {
             </TouchableOpacity>
           )}
         </ThemedView>
+        <TouchableOpacity
+          style={[styles.scanButton, { backgroundColor: tintColor }]}
+          onPress={() => setShowBarcodeScanner(true)}
+        >
+          <Ionicons name="scan-outline" size={20} color="#fff" />
+        </TouchableOpacity>
       </View>
 
       {/* Products List */}
@@ -520,6 +592,27 @@ export default function ProductsScreen() {
           </ThemedView>
         </View>
       </Modal>
+
+      {/* Barcode Generator Modal */}
+      <BarcodeGenerator
+        visible={showBarcodeGenerator}
+        onClose={() => {
+          setShowBarcodeGenerator(false);
+          setBarcodeProduct(null);
+        }}
+        product={barcodeProduct}
+        type="CODE128"
+        title="Product Barcode"
+      />
+
+      {/* Barcode Scanner Modal */}
+      <BarcodeScanner
+        visible={showBarcodeScanner}
+        onClose={() => setShowBarcodeScanner(false)}
+        onScan={handleBarcodeScan}
+        title="Scan Product Barcode"
+        subtitle="Scan a barcode to find the product"
+      />
     </ThemedView>
   );
 }
@@ -543,8 +636,12 @@ const styles = StyleSheet.create({
   searchSection: {
     paddingHorizontal: 16,
     marginBottom: 16,
+    flexDirection: 'row',
+    gap: 12,
+    alignItems: 'center',
   },
   searchContainer: {
+    flex: 1,
     flexDirection: 'row',
     alignItems: 'center',
     paddingHorizontal: 16,
@@ -552,6 +649,13 @@ const styles = StyleSheet.create({
     borderRadius: 12,
     borderWidth: 2,
     gap: 12,
+  },
+  scanButton: {
+    width: 48,
+    height: 48,
+    borderRadius: 12,
+    alignItems: 'center',
+    justifyContent: 'center',
   },
   searchInput: {
     flex: 1,
