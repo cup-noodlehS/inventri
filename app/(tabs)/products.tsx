@@ -42,6 +42,30 @@ export default function ProductsScreen() {
   });
   const [saving, setSaving] = useState(false);
 
+  // Guard: allow only whole numbers (empty string is allowed while typing)
+  const allowNumericInput = (text: string, fieldLabel: string): boolean => {
+    if (text === '') {
+      return true;
+    }
+    if (/^[0-9]+$/.test(text)) {
+      return true;
+    }
+    Alert.alert('Invalid input', `${fieldLabel} accepts numbers only.`);
+    return false;
+  };
+
+  // Guard: allow numbers with a single decimal point (empty string allowed)
+  const allowDecimalInput = (text: string, fieldLabel: string): boolean => {
+    if (text === '') {
+      return true;
+    }
+    if (/^[0-9]*\\.?[0-9]*$/.test(text)) {
+      return true;
+    }
+    Alert.alert('Invalid input', `${fieldLabel} accepts numeric values (one decimal point max).`);
+    return false;
+  };
+
   const fetchProducts = async () => {
     try {
       setLoading(true);
@@ -154,8 +178,13 @@ export default function ProductsScreen() {
 
   const handleSave = async () => {
     // Validation
-    if (!formData.sku.trim() || !formData.name.trim()) {
-      Alert.alert('Validation Error', 'SKU and Name are required.');
+    if (!editingProduct && !formData.sku.trim()) {
+      Alert.alert('Validation Error', 'SKU is required.');
+      return;
+    }
+
+    if (!formData.name.trim()) {
+      Alert.alert('Validation Error', 'Product Name is required.');
       return;
     }
 
@@ -416,16 +445,27 @@ export default function ProductsScreen() {
             >
               {/* SKU */}
               <View style={styles.formGroup}>
-                <ThemedText style={styles.label}>SKU *</ThemedText>
-                <TextInput
-                  style={[styles.input, { borderColor: tintColor + '40', color: textColor }]}
-                  value={formData.sku}
-                  onChangeText={(text) => setFormData({ ...formData, sku: text })}
-                  placeholder="e.g., DIOR-SAUVAGE-100"
-                  placeholderTextColor="#9CA3AF"
-                  editable={!editingProduct}
-                  autoCapitalize="characters"
-                />
+                <ThemedText style={styles.label}>
+                  SKU {!editingProduct && '*'}
+                  {editingProduct && (
+                    <ThemedText style={styles.readOnlyLabel}> (Cannot be changed)</ThemedText>
+                  )}
+                </ThemedText>
+                {editingProduct ? (
+                  <View style={[styles.input, styles.skuReadOnlyContainer, { borderColor: '#9CA3AF' }]}>
+                    <Ionicons name="lock-closed" size={16} color="#6B7280" style={styles.lockIcon} />
+                    <ThemedText style={styles.skuReadOnlyText}>{formData.sku}</ThemedText>
+                  </View>
+                ) : (
+                  <TextInput
+                    style={[styles.input, { borderColor: tintColor + '40', color: textColor }]}
+                    value={formData.sku}
+                    onChangeText={(text) => setFormData({ ...formData, sku: text })}
+                    placeholder="e.g., DIOR-SAUVAGE-100"
+                    placeholderTextColor="#9CA3AF"
+                    autoCapitalize="characters"
+                  />
+                )}
               </View>
 
               {/* Name */}
@@ -446,7 +486,12 @@ export default function ProductsScreen() {
                 <TextInput
                   style={[styles.input, { borderColor: tintColor + '40', color: textColor }]}
                   value={formData.volume_ml}
-                  onChangeText={(text) => setFormData({ ...formData, volume_ml: text })}
+                  onChangeText={(text) => {
+                    if (!allowNumericInput(text, 'Volume')) {
+                      return;
+                    }
+                    setFormData({ ...formData, volume_ml: text });
+                  }}
                   placeholder="e.g., 100"
                   placeholderTextColor="#9CA3AF"
                   keyboardType="numeric"
@@ -459,7 +504,12 @@ export default function ProductsScreen() {
                 <TextInput
                   style={[styles.input, { borderColor: tintColor + '40', color: textColor }]}
                   value={formData.price}
-                  onChangeText={(text) => setFormData({ ...formData, price: text })}
+                  onChangeText={(text) => {
+                    if (!allowDecimalInput(text, 'Price')) {
+                      return;
+                    }
+                    setFormData({ ...formData, price: text });
+                  }}
                   placeholder="e.g., 95.00"
                   placeholderTextColor="#9CA3AF"
                   keyboardType="decimal-pad"
@@ -472,7 +522,12 @@ export default function ProductsScreen() {
                 <TextInput
                   style={[styles.input, { borderColor: tintColor + '40', color: textColor }]}
                   value={formData.min_stock_threshold}
-                  onChangeText={(text) => setFormData({ ...formData, min_stock_threshold: text })}
+                  onChangeText={(text) => {
+                    if (!allowNumericInput(text, 'Min Stock Threshold')) {
+                      return;
+                    }
+                    setFormData({ ...formData, min_stock_threshold: text });
+                  }}
                   placeholder="e.g., 5"
                   placeholderTextColor="#9CA3AF"
                   keyboardType="numeric"
@@ -729,6 +784,27 @@ const styles = StyleSheet.create({
     borderRadius: 12,
     padding: 12,
     fontSize: 15,
+  },
+  skuReadOnlyContainer: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: 'rgba(0,0,0,0.03)',
+    opacity: 0.7,
+  },
+  lockIcon: {
+    marginRight: 8,
+  },
+  skuReadOnlyText: {
+    fontSize: 15,
+    fontWeight: '600',
+    opacity: 0.6,
+    flex: 1,
+  },
+  readOnlyLabel: {
+    fontSize: 12,
+    fontWeight: '400',
+    opacity: 0.6,
+    fontStyle: 'italic',
   },
   textArea: {
     borderWidth: 2,
