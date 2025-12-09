@@ -27,6 +27,8 @@ export default function TransactionsScreen() {
   const [productSearchQuery, setProductSearchQuery] = useState('');
   const [transactions, setTransactions] = useState<TransactionWithItems[]>([]);
   const [products, setProducts] = useState<CurrentStock[]>([]);
+  const [productsLoading, setProductsLoading] = useState(false);
+  const [productsError, setProductsError] = useState<string | null>(null);
   const [loadingTransactions, setLoadingTransactions] = useState(true);
   const [submitting, setSubmitting] = useState(false);
 
@@ -37,10 +39,13 @@ export default function TransactionsScreen() {
 
   const fetchProducts = async () => {
     try {
+      setProductsLoading(true);
+      setProductsError(null);
       const { data, error } = await getProducts();
 
       if (error) {
         console.error('Error fetching products:', error);
+        setProductsError('Unable to load products. Please check your connection or sign in again.');
         return;
       }
 
@@ -49,6 +54,9 @@ export default function TransactionsScreen() {
       }
     } catch (error) {
       console.error('Error in fetchProducts:', error);
+      setProductsError('Unable to load products. Please try again.');
+    } finally {
+      setProductsLoading(false);
     }
   };
 
@@ -216,7 +224,10 @@ export default function TransactionsScreen() {
             <ThemedText style={styles.label}>Product</ThemedText>
             <TouchableOpacity
               style={[styles.picker, { borderColor: tintColor + '40' }]}
-              onPress={() => setShowProductModal(true)}
+              onPress={() => {
+                setShowProductModal(true);
+                fetchProducts();
+              }}
             >
               <View style={styles.pickerContent}>
                 <Ionicons name="cube-outline" size={20} color={tintColor} />
@@ -413,54 +424,66 @@ export default function TransactionsScreen() {
             </View>
 
             {/* Products List */}
-            <FlatList
-              data={products.filter(product => {
-                if (!productSearchQuery.trim()) return true;
-                const query = productSearchQuery.toLowerCase();
-                return (
-                  product.name.toLowerCase().includes(query) ||
-                  product.sku.toLowerCase().includes(query)
-                );
-              })}
-              keyExtractor={item => item.sku}
-              renderItem={({ item }) => (
-                <TouchableOpacity
-                  style={[
-                    styles.modalProductItem,
-                    selectedProduct === item.sku && { backgroundColor: tintColor + '20' }
-                  ]}
-                  onPress={() => {
-                    setSelectedProduct(item.sku);
-                    setShowProductModal(false);
-                    setProductSearchQuery('');
-                  }}
-                >
-                  <View style={styles.modalProductInfo}>
-                    <ThemedText style={styles.modalProductName}>{item.name}</ThemedText>
-                    <ThemedText style={styles.modalProductSku}>{item.sku}</ThemedText>
-                    <View style={styles.modalProductMeta}>
-                      <ThemedText style={styles.modalProductVolume}>
-                        {item.volume_ml}ml
-                      </ThemedText>
-                      <ThemedText style={styles.modalProductPrice}>
-                        ₱{item.price.toFixed(2)}
-                      </ThemedText>
+            {productsLoading ? (
+              <ThemedView style={styles.modalEmptyState}>
+                <ActivityIndicator size="small" color={tintColor} />
+                <ThemedText style={{ marginTop: 8 }}>Loading products...</ThemedText>
+              </ThemedView>
+            ) : productsError ? (
+              <ThemedView style={styles.modalEmptyState}>
+                <Ionicons name="alert-circle" size={48} color="#EF4444" />
+                <ThemedText style={styles.modalEmptyText}>{productsError}</ThemedText>
+              </ThemedView>
+            ) : (
+              <FlatList
+                data={products.filter(product => {
+                  if (!productSearchQuery.trim()) return true;
+                  const query = productSearchQuery.toLowerCase();
+                  return (
+                    product.name.toLowerCase().includes(query) ||
+                    product.sku.toLowerCase().includes(query)
+                  );
+                })}
+                keyExtractor={item => item.sku}
+                renderItem={({ item }) => (
+                  <TouchableOpacity
+                    style={[
+                      styles.modalProductItem,
+                      selectedProduct === item.sku && { backgroundColor: tintColor + '20' }
+                    ]}
+                    onPress={() => {
+                      setSelectedProduct(item.sku);
+                      setShowProductModal(false);
+                      setProductSearchQuery('');
+                    }}
+                  >
+                    <View style={styles.modalProductInfo}>
+                      <ThemedText style={styles.modalProductName}>{item.name}</ThemedText>
+                      <ThemedText style={styles.modalProductSku}>{item.sku}</ThemedText>
+                      <View style={styles.modalProductMeta}>
+                        <ThemedText style={styles.modalProductVolume}>
+                          {item.volume_ml}ml
+                        </ThemedText>
+                        <ThemedText style={styles.modalProductPrice}>
+                          ₱{item.price.toFixed(2)}
+                        </ThemedText>
+                      </View>
                     </View>
-                  </View>
-                  {selectedProduct === item.sku && (
-                    <Ionicons name="checkmark-circle" size={24} color={tintColor} />
-                  )}
-                </TouchableOpacity>
-              )}
-              contentContainerStyle={styles.modalProductList}
-              showsVerticalScrollIndicator={false}
-              ListEmptyComponent={
-                <ThemedView style={styles.modalEmptyState}>
-                  <Ionicons name="cube-outline" size={48} color="#9CA3AF" />
-                  <ThemedText style={styles.modalEmptyText}>No products found</ThemedText>
-                </ThemedView>
-              }
-            />
+                    {selectedProduct === item.sku && (
+                      <Ionicons name="checkmark-circle" size={24} color={tintColor} />
+                    )}
+                  </TouchableOpacity>
+                )}
+                contentContainerStyle={styles.modalProductList}
+                showsVerticalScrollIndicator={false}
+                ListEmptyComponent={
+                  <ThemedView style={styles.modalEmptyState}>
+                    <Ionicons name="cube-outline" size={48} color="#9CA3AF" />
+                    <ThemedText style={styles.modalEmptyText}>No products found</ThemedText>
+                  </ThemedView>
+                }
+              />
+            )}
           </ThemedView>
         </View>
       </Modal>
