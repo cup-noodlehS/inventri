@@ -225,7 +225,8 @@ const styles = StyleSheet.create({
     paddingVertical: 40,
   },
   header: {
-    marginBottom: 24,
+    marginTop: 16,
+    marginBottom: 16,
   },
   title: {
     marginBottom: 4,

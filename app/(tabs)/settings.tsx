@@ -139,7 +139,8 @@ const styles = StyleSheet.create({
     padding: 16,
   },
   header: {
-    marginBottom: 24,
+    marginTop: 16,
+    marginBottom: 16,
   },
   title: {
     marginBottom: 4,
