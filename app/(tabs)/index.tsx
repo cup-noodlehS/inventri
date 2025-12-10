@@ -1,6 +1,6 @@
 import { Ionicons } from '@expo/vector-icons';
 import { useEffect, useState } from 'react';
-import { ActivityIndicator, Alert, RefreshControl, ScrollView, StyleSheet, View } from 'react-native';
+import { ActivityIndicator, Alert, Pressable, RefreshControl, ScrollView, StyleSheet, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { ThemedText } from '@/components/themed-text';
@@ -17,6 +17,7 @@ export default function HomeScreen() {
   const [products, setProducts] = useState<CurrentStock[]>([]);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
+  const [showAllLowStock, setShowAllLowStock] = useState(false);
 
   const fetchProducts = async () => {
     try {
@@ -83,6 +84,9 @@ export default function HomeScreen() {
   const lowStockProducts = products.filter(product => product.quantity_on_hand <= product.min_stock_threshold);
   const totalProducts = products.length;
   const totalValue = products.reduce((sum, product) => sum + product.total_value, 0);
+  const displayedLowStock = showAllLowStock ? lowStockProducts : lowStockProducts.slice(0, 5);
+  const hiddenLowStockCount = showAllLowStock ? 0 : Math.max(lowStockProducts.length - 5, 0);
+  const hasMoreLowStock = lowStockProducts.length > 5;
 
   return (
     <ThemedView style={[styles.container, { paddingTop: insets.top }]}>
@@ -149,7 +153,7 @@ export default function HomeScreen() {
               </ThemedText>
             </View>
             <View style={styles.alertsContainer}>
-              {lowStockProducts.slice(0, 5).map((product) => (
+              {displayedLowStock.map((product) => (
                 <View key={product.sku} style={styles.alertItem}>
                   <View style={styles.alertItemLeft}>
                     <ThemedText style={styles.productName}>{product.name}</ThemedText>
@@ -158,16 +162,28 @@ export default function HomeScreen() {
                     </ThemedText>
                   </View>
                   <View style={styles.alertItemRight}>
-                    <View style={styles.stockBadge}>
+                    <Pressable
+                      style={styles.stockBadge}
+                      onPress={() => setShowAllLowStock(current => !current)}
+                      accessibilityRole="button"
+                      accessibilityLabel={showAllLowStock ? 'Hide low stock items' : 'Show all low stock items'}
+                    >
                       <ThemedText style={styles.stockBadgeText}>{product.quantity_on_hand} left</ThemedText>
-                    </View>
+                    </Pressable>
                   </View>
                 </View>
               ))}
-              {lowStockProducts.length > 5 && (
-                <ThemedText style={styles.moreItemsText}>
-                  +{lowStockProducts.length - 5} more items need attention
-                </ThemedText>
+              {hasMoreLowStock && (
+                <Pressable
+                  style={styles.moreToggleButton}
+                  onPress={() => setShowAllLowStock(current => !current)}
+                  accessibilityRole="button"
+                  accessibilityLabel={showAllLowStock ? 'Close more low stock items' : 'Show more low stock items'}
+                >
+                  <ThemedText style={styles.moreItemsText}>
+                    {showAllLowStock ? 'Close more' : `Show more (+${hiddenLowStockCount} items)`}
+                  </ThemedText>
+                </Pressable>
               )}
             </View>
           </ThemedView>
@@ -225,7 +241,8 @@ const styles = StyleSheet.create({
     paddingVertical: 40,
   },
   header: {
-    marginBottom: 24,
+    marginTop: 16,
+    marginBottom: 16,
   },
   title: {
     marginBottom: 4,
@@ -322,6 +339,9 @@ const styles = StyleSheet.create({
     color: '#DC2626',
     fontSize: 12,
     fontWeight: '600',
+  },
+  moreToggleButton: {
+    alignItems: 'center',
   },
   moreItemsText: {
     fontSize: 13,
