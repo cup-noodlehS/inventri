@@ -1,7 +1,6 @@
 import { Ionicons } from '@expo/vector-icons';
 import { router } from 'expo-router';
-import { useState } from 'react';
-import { Alert, ScrollView, StyleSheet, Switch, TextInput, TouchableOpacity, View } from 'react-native';
+import { Alert, ScrollView, StyleSheet, TextInput, TouchableOpacity, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { ThemedText } from '@/components/themed-text';
@@ -14,7 +13,6 @@ export default function SettingsScreen() {
   const insets = useSafeAreaInsets();
   const tintColor = useThemeColor({}, 'tint');
   const textColor = useThemeColor({}, 'text');
-  const [barcodeType, setBarcodeType] = useState('Code128');
 
   const handleLogout = () => {
     Alert.alert(
@@ -103,19 +101,6 @@ export default function SettingsScreen() {
             />
           </View>
 
-          <View style={styles.settingItem}>
-            <ThemedText style={styles.settingLabel}>Barcode Type</ThemedText>
-            <View style={styles.switchContainer}>
-              <ThemedText>Code128</ThemedText>
-              <Switch
-                value={barcodeType === 'QR'}
-                onValueChange={() => setBarcodeType(barcodeType === 'QR' ? 'Code128' : 'QR')}
-                trackColor={{ false: '#D1D5DB', true: tintColor }}
-                thumbColor="#fff"
-              />
-              <ThemedText>QR</ThemedText>
-            </View>
-          </View>
         </ThemedView>
 
         {/* Logout Button */}
