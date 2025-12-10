@@ -1,14 +1,16 @@
 import { Ionicons } from '@expo/vector-icons';
-import { Barcode } from 'expo-barcode-generator';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 import * as Print from 'expo-print';
 import * as Sharing from 'expo-sharing';
-import { useEffect, useState } from 'react';
-import { ActivityIndicator, Alert, Modal, ScrollView, StyleSheet, TextInput, TouchableOpacity, View } from 'react-native';
+import { useCallback, useEffect, useMemo, useState } from 'react';
+import { ActivityIndicator, Alert, Modal, ScrollView, StyleSheet, TouchableOpacity, View } from 'react-native';
 
+import { BarcodePreview, BarcodeWarnings, LabelQuantitySelector, ProductInfoCard, generateLabelHTML } from '@/components/barcode';
 import { ThemedText } from '@/components/themed-text';
 import { ThemedView } from '@/components/themed-view';
 import { useThemeColor } from '@/hooks/use-theme-color';
 import { CurrentStock } from '@/lib/types';
+import { getUnitPadding, safeParseInt } from '@/lib/utils/barcode';
 
 interface BarcodeGeneratorProps {
   visible: boolean;
@@ -31,48 +33,120 @@ export function BarcodeGenerator({
   const textColor = useThemeColor({}, 'text');
   const [downloading, setDownloading] = useState(false);
   const [labelQuantity, setLabelQuantity] = useState<string>('1');
+  const [startingUnitNumber, setStartingUnitNumber] = useState<string>('1');
+  const [labeledUnitsCount, setLabeledUnitsCount] = useState<number>(0);
 
-  // Reset quantity when modal opens/closes or product changes
+  // Get storage key for last generated unit number - memoized with useCallback
+  const getLastGeneratedUnitKey = useCallback(() => {
+    if (!product) return null;
+    return `barcode_last_unit_${product.sku}_${product.volume_ml}`;
+  }, [product]);
+
+  // Load last generated unit number when modal opens
   useEffect(() => {
-    if (visible && product) {
-      // Default to stock quantity, but cap at reasonable number for printing
-      const defaultQty = Math.min(product.quantity_on_hand, 10);
-      setLabelQuantity(String(defaultQty));
-    } else if (!visible) {
-      setLabelQuantity('1');
-    }
-  }, [visible, product]);
+    const loadLastUnitNumber = async () => {
+      if (visible && product) {
+        try {
+          const key = getLastGeneratedUnitKey();
+          if (key) {
+            const lastUnit = await AsyncStorage.getItem(key);
+            if (lastUnit) {
+              const lastUnitNum = safeParseInt(lastUnit, 0);
+              setLabeledUnitsCount(lastUnitNum);
+              const nextUnit = lastUnitNum + 1;
+              setStartingUnitNumber(String(nextUnit));
+              // Calculate available units for labeling
+              const available = product.quantity_on_hand - lastUnitNum;
+              if (available > 0) {
+                setLabelQuantity(String(Math.min(available, 10)));
+              } else {
+                setLabelQuantity('1');
+              }
+            } else {
+              setLabeledUnitsCount(0);
+              setStartingUnitNumber('1');
+              // Default to stock quantity, but cap at reasonable number for printing
+              const defaultQty = Math.min(product.quantity_on_hand, 10);
+              setLabelQuantity(String(defaultQty));
+            }
+          }
+        } catch (error) {
+          console.error('Error loading last unit number:', error);
+          setLabeledUnitsCount(0);
+          setStartingUnitNumber('1');
+          const defaultQty = Math.min(product.quantity_on_hand, 10);
+          setLabelQuantity(String(defaultQty));
+        }
+      } else if (!visible) {
+        // Reset all state when modal closes
+        setStartingUnitNumber('1');
+        setLabelQuantity('1');
+        setLabeledUnitsCount(0);
+      }
+    };
+    
+    loadLastUnitNumber();
+  }, [visible, product, getLastGeneratedUnitKey]);
+
+
+  // Memoize parsed values to avoid repeated calculations
+  const startUnitNum = useMemo(() => safeParseInt(startingUnitNumber, 1), [startingUnitNumber]);
+  const quantityNum = useMemo(() => safeParseInt(labelQuantity, 1), [labelQuantity]);
+  const lastUnitNum = useMemo(() => startUnitNum + quantityNum - 1, [startUnitNum, quantityNum]);
+
+  // Check if approaching unit number limit
+  const approachingLimit = useMemo(() => !!(product && startUnitNum >= 900), [product, startUnitNum]);
+  const atLimit = useMemo(() => !!(product && startUnitNum >= 9999), [product, startUnitNum]);
 
   // Generate unique barcode value: SKU + volume + unit number (e.g., "DIOR-SAUVAGE-100-100ml-001")
   // This ensures each individual unit has a unique barcode
-  const getBarcodeValue = (unitNum?: number) => {
+  const getBarcodeValue = useCallback((unitNum?: number): string => {
     const baseValue = product
       ? `${product.sku}-${product.volume_ml}ml`
       : value || '';
     
     if (unitNum !== undefined) {
-      // Add unit number with zero padding (001, 002, etc.)
-      return `${baseValue}-${String(unitNum).padStart(3, '0')}`;
+      const actualUnitNum = startUnitNum + unitNum - 1;
+      const padding = getUnitPadding(actualUnitNum);
+      // Add unit number with zero padding (001, 002, etc. or 0001, 0002, etc.)
+      return `${baseValue}-${String(actualUnitNum).padStart(padding, '0')}`;
     }
     return baseValue;
-  };
+  }, [product, value, startUnitNum, getUnitPadding]);
 
-  // For preview, show first unit (001)
-  const previewBarcodeValue = getBarcodeValue(1);
+  // For preview, show first unit from starting number
+  const previewUnitNumber = startUnitNum;
+  const previewBarcodeValue = useMemo(() => getBarcodeValue(1), [getBarcodeValue]);
   const barcodeValue = previewBarcodeValue;
-
-  if (!visible || !barcodeValue) return null;
 
   // Determine format for expo-barcode-generator (JSBarcode format names)
   const barcodeFormat = type === 'EAN13' ? 'EAN13' : type === 'EAN8' ? 'EAN8' : 'CODE128';
 
-  const handleDownload = async () => {
+  // Calculate available units for labeling
+  const availableForLabeling = useMemo(() => {
+    return product ? Math.max(0, product.quantity_on_hand - labeledUnitsCount) : 0;
+  }, [product, labeledUnitsCount]);
+  
+  // Check if there's a mismatch (stock decreased but labels already generated)
+  const hasStockMismatch = useMemo(() => {
+    return !!(product && labeledUnitsCount > 0 && product.quantity_on_hand < labeledUnitsCount);
+  }, [product, labeledUnitsCount]);
+  
+  // Check if generating more than available
+  const exceedsAvailable = useMemo(() => {
+    return product && quantityNum > availableForLabeling;
+  }, [product, quantityNum, availableForLabeling]);
+
+  const handleDownload = useCallback(async (skipWarning: boolean = false) => {
     try {
       setDownloading(true);
 
-      const quantity = parseInt(labelQuantity) || 1;
+      const quantity = quantityNum;
+      const startUnit = startUnitNum;
+      const lastUnit = lastUnitNum;
       const maxQuantity = product ? product.quantity_on_hand : 100;
 
+      // Validation
       if (quantity < 1) {
         Alert.alert('Error', 'Quantity must be at least 1');
         setDownloading(false);
@@ -85,105 +159,73 @@ export function BarcodeGenerator({
         return;
       }
 
-      // Generate HTML for printing multiple labels
+      if (startUnit < 1) {
+        Alert.alert('Error', 'Starting unit number must be at least 1');
+        setDownloading(false);
+        return;
+      }
+
+      if (lastUnit > 9999) {
+        Alert.alert('Error', 'Unit numbers cannot exceed 9999');
+        setDownloading(false);
+        return;
+      }
+
+      // Warn if there's a stock mismatch or exceeding available (unless already confirmed)
+      if (!skipWarning && (hasStockMismatch || exceedsAvailable)) {
+        const message = hasStockMismatch
+          ? `Warning: Stock has decreased since labels were generated.\n\n` +
+            `Labeled units: ${labeledUnitsCount}\n` +
+            `Current stock: ${product?.quantity_on_hand || 0}\n` +
+            `Available for labeling: ${availableForLabeling}\n\n` +
+            `You're about to generate ${quantity} labels starting from unit #${String(startUnit).padStart(getUnitPadding(startUnit), '0')}.\n\n` +
+            `Continue anyway?`
+          : `Warning: You're generating ${quantity} labels, but only ${availableForLabeling} units are available for labeling.\n\n` +
+            `Labeled units: ${labeledUnitsCount}\n` +
+            `Current stock: ${product?.quantity_on_hand || 0}\n\n` +
+            `Continue anyway?`;
+        
+        Alert.alert(
+          'Stock Mismatch Warning',
+          message,
+          [
+            { 
+              text: 'Cancel', 
+              style: 'cancel', 
+              onPress: () => {
+                setDownloading(false);
+              }
+            },
+            { 
+              text: 'Continue', 
+              style: 'default',
+              onPress: () => {
+                // Recursively call with skipWarning flag instead of setTimeout
+                handleDownload(true);
+              }
+            }
+          ]
+        );
+        return;
+      }
+
+      // Generate labels data
       const labels = [];
       for (let i = 1; i <= quantity; i++) {
         const unitBarcode = getBarcodeValue(i);
-        labels.push(`
-          <div class="label-page">
-            <div class="barcode-container">
-              ${product ? `<div class="product-info">${product.name}<br>${product.volume_ml}ml</div>` : ''}
-              <svg id="barcode-svg-${i}" width="100%" height="60"></svg>
-              <div class="barcode-value">${unitBarcode}</div>
-            </div>
-          </div>
-        `);
+        labels.push({
+          barcodeValue: unitBarcode,
+          productName: product?.name,
+          volumeMl: product?.volume_ml,
+        });
       }
 
-      const html = `
-        <!DOCTYPE html>
-        <html>
-          <head>
-            <meta charset="utf-8">
-            <meta name="viewport" content="width=device-width, initial-scale=1.0">
-            <style>
-              @page {
-                size: 2in 1in;
-                margin: 0.1in;
-              }
-              body {
-                margin: 0;
-                padding: 0;
-                font-family: Arial, sans-serif;
-              }
-              .label-page {
-                page-break-after: always;
-                width: 2in;
-                height: 1in;
-                padding: 8px;
-                display: flex;
-                flex-direction: column;
-                align-items: center;
-                justify-content: center;
-                box-sizing: border-box;
-              }
-              .label-page:last-child {
-                page-break-after: auto;
-              }
-              .barcode-container {
-                display: flex;
-                flex-direction: column;
-                align-items: center;
-                justify-content: center;
-                width: 100%;
-                height: 100%;
-              }
-              .product-info {
-                text-align: center;
-                margin-bottom: 4px;
-                font-size: 10px;
-                font-weight: bold;
-              }
-              .barcode-value {
-                text-align: center;
-                margin-top: 4px;
-                font-size: 9px;
-                font-family: monospace;
-              }
-            </style>
-          </head>
-          <body>
-            ${labels.join('')}
-            <script src="https://cdn.jsdelivr.net/npm/jsbarcode@3.11.6/dist/JsBarcode.all.min.js"></script>
-            <script>
-              ${labels.map((_, i) => {
-                const barcodeVal = getBarcodeValue(i + 1);
-                // Escape any special characters in the barcode value for JavaScript
-                const escapedValue = barcodeVal.replace(/\\/g, '\\\\').replace(/"/g, '\\"').replace(/'/g, "\\'");
-                return `
-                try {
-                  JsBarcode("#barcode-svg-${i + 1}", "${escapedValue}", {
-                    format: "${barcodeFormat}",
-                    width: 2,
-                    height: 50,
-                    displayValue: false,
-                    background: "#ffffff",
-                    lineColor: "#000000",
-                    valid: function(valid) {
-                      if (!valid) {
-                        console.error("Invalid barcode value for label ${i + 1}: ${escapedValue}");
-                      }
-                    }
-                  });
-                } catch (e) {
-                  console.error("Error generating barcode ${i + 1}:", e);
-                }
-              `;
-              }).join('')}
-            </script>
-          </body>
-        </html>
-      `;
+      // Generate HTML using the utility function
+      const html = generateLabelHTML({
+        labels,
+        format: barcodeFormat,
+        getBarcodeValue,
+      });
 
       // Print the barcode
       const { uri } = await Print.printToFileAsync({ html });
@@ -198,13 +240,29 @@ export function BarcodeGenerator({
       } else {
         Alert.alert('Success', `Barcode saved to: ${uri}`);
       }
-    } catch (error: any) {
+
+      // Save last generated unit number after successful generation
+      const key = getLastGeneratedUnitKey();
+      if (key && product && lastUnit > 0) {
+        try {
+          await AsyncStorage.setItem(key, String(lastUnit));
+          setLabeledUnitsCount(lastUnit);
+        } catch (storageError) {
+          console.error('Error saving last unit number:', storageError);
+          // Don't fail the whole operation if storage fails
+        }
+      }
+    } catch (error: unknown) {
       console.error('Error downloading barcode:', error);
-      Alert.alert('Error', error?.message || 'Failed to save barcode');
+      const errorMessage = error instanceof Error ? error.message : 'Failed to save barcode';
+      Alert.alert('Error', errorMessage);
     } finally {
       setDownloading(false);
     }
-  };
+  }, [quantityNum, startUnitNum, lastUnitNum, product, hasStockMismatch, exceedsAvailable, labeledUnitsCount, availableForLabeling, getBarcodeValue, getUnitPadding, barcodeFormat, getLastGeneratedUnitKey]);
+
+  // Early return must come AFTER all hooks
+  if (!visible || !barcodeValue) return null;
 
   return (
     <Modal visible={visible} animationType="slide" transparent onRequestClose={onClose}>
@@ -227,110 +285,49 @@ export function BarcodeGenerator({
             nestedScrollEnabled={true}
           >
             {/* Product Info */}
-            {product && (
-              <View style={styles.productInfoContainer}>
-                <ThemedText style={styles.productName}>{product.name}</ThemedText>
-                <ThemedText style={styles.productDetails}>
-                  SKU: {product.sku} • {product.volume_ml}ml • ₱{product.price.toFixed(2)}
-                </ThemedText>
-              </View>
-            )}
-
+            {product && <ProductInfoCard product={product} />}
 
             {/* Label Quantity Selector */}
             {product && (
-              <View style={styles.quantityContainer}>
-                <ThemedText style={styles.quantityLabel}>Generate Labels:</ThemedText>
-                <View style={styles.quantityInputContainer}>
-                  <TouchableOpacity
-                    style={[styles.quantityButton, { backgroundColor: tintColor }]}
-                    onPress={() => {
-                      const qty = Math.max(1, parseInt(labelQuantity) - 1);
-                      setLabelQuantity(String(qty));
-                    }}
-                  >
-                    <Ionicons name="remove" size={20} color="#fff" />
-                  </TouchableOpacity>
-                  <TextInput
-                    style={[styles.quantityInput, { borderColor: tintColor + '40', color: textColor }]}
-                    value={labelQuantity}
-                    onChangeText={(text) => {
-                      const num = parseInt(text) || 0;
-                      const maxQty = product.quantity_on_hand;
-                      if (text === '' || (num >= 1 && num <= maxQty)) {
-                        setLabelQuantity(text);
-                      }
-                    }}
-                    keyboardType="numeric"
-                    placeholder="1"
-                    placeholderTextColor="#9CA3AF"
-                  />
-                  <TouchableOpacity
-                    style={[styles.quantityButton, { backgroundColor: tintColor }]}
-                    onPress={() => {
-                      const qty = Math.min(product.quantity_on_hand, parseInt(labelQuantity) + 1);
-                      setLabelQuantity(String(qty));
-                    }}
-                  >
-                    <Ionicons name="add" size={20} color="#fff" />
-                  </TouchableOpacity>
-                </View>
-                <ThemedText style={styles.quantityHint}>
-                  {product.quantity_on_hand} unit{product.quantity_on_hand !== 1 ? 's' : ''} in stock
-                </ThemedText>
-                <ThemedText style={styles.quantityInfo}>
-                  Each label will have a unique unit number (001, 002, 003...)
-                </ThemedText>
-              </View>
+              <>
+                <LabelQuantitySelector
+                  startingUnitNumber={startingUnitNumber}
+                  labelQuantity={labelQuantity}
+                  onStartingUnitChange={setStartingUnitNumber}
+                  onQuantityChange={setLabelQuantity}
+                  product={product}
+                  startUnitNum={startUnitNum}
+                  quantityNum={quantityNum}
+                  lastUnitNum={lastUnitNum}
+                  labeledUnitsCount={labeledUnitsCount}
+                />
+                <BarcodeWarnings
+                  availableForLabeling={availableForLabeling}
+                  hasStockMismatch={hasStockMismatch}
+                  approachingLimit={approachingLimit}
+                  atLimit={atLimit}
+                  labeledUnitsCount={labeledUnitsCount}
+                />
+              </>
             )}
           </ScrollView>
 
           {/* Barcode Preview for Label */}
-          <View style={styles.previewContainer}>
-            <ThemedText style={styles.previewLabel}>
-              Label Preview (Unit #001):
-            </ThemedText>
-            <View style={styles.previewBarcodeContainer}>
-              <View style={styles.previewBarcodeWrapper}>
-                <Barcode
-                  value={previewBarcodeValue}
-                  options={{
-                    format: barcodeFormat,
-                    width: 1.5,
-                    height: 40,
-                    displayValue: true,
-                    fontSize: 8,
-                    textAlign: 'center',
-                    textPosition: 'bottom',
-                    textMargin: 3,
-                    background: '#ffffff',
-                    lineColor: '#000000',
-                  }}
-                />
-              </View>
-              {product && (
-                <View style={styles.previewProductInfo}>
-                  <ThemedText style={styles.previewProductName} numberOfLines={1}>
-                    {product.name}
-                  </ThemedText>
-                  <ThemedText style={styles.previewProductVolume}>
-                    {product.volume_ml}ml
-                  </ThemedText>
-                </View>
-              )}
-            </View>
-            {parseInt(labelQuantity) > 1 && (
-              <ThemedText style={styles.previewNote}>
-                {parseInt(labelQuantity)} labels will be generated (001-{String(parseInt(labelQuantity)).padStart(3, '0')})
-              </ThemedText>
-            )}
-          </View>
+          <BarcodePreview
+            barcodeValue={previewBarcodeValue}
+            format={barcodeFormat}
+            product={product}
+            unitNumber={previewUnitNumber}
+            quantity={quantityNum}
+            startUnitNum={startUnitNum}
+            lastUnitNum={lastUnitNum}
+          />
 
           {/* Action Buttons */}
           <View style={styles.actionsContainer}>
             <TouchableOpacity
               style={[styles.actionButton, styles.downloadButton, { backgroundColor: tintColor }]}
-              onPress={handleDownload}
+              onPress={() => handleDownload(false)}
               disabled={downloading}
             >
               {downloading ? (
@@ -341,7 +338,7 @@ export function BarcodeGenerator({
               <ThemedText style={styles.actionButtonText}>
                 {downloading 
                   ? 'Saving...' 
-                  : `Save & Print ${parseInt(labelQuantity) > 1 ? `${labelQuantity} Labels` : 'Label'}`}
+                  : `Save & Print ${quantityNum > 1 ? `${quantityNum} Labels` : 'Label'}`}
               </ThemedText>
             </TouchableOpacity>
             <TouchableOpacity
@@ -397,172 +394,6 @@ const styles = StyleSheet.create({
   scrollContent: {
     alignItems: 'center',
     paddingBottom: 8,
-  },
-  productInfoContainer: {
-    width: '100%',
-    padding: 16,
-    backgroundColor: 'rgba(0,0,0,0.05)',
-    borderRadius: 12,
-    marginBottom: 16,
-    alignItems: 'center',
-  },
-  productName: {
-    fontSize: 16,
-    fontWeight: 'bold',
-    marginBottom: 4,
-    textAlign: 'center',
-  },
-  productDetails: {
-    fontSize: 12,
-    opacity: 0.7,
-    textAlign: 'center',
-  },
-  barcodeContainer: {
-    width: '100%',
-    alignItems: 'center',
-    marginBottom: 16,
-    padding: 16,
-    backgroundColor: '#fff',
-    borderRadius: 12,
-  },
-  barcodeWrapper: {
-    width: '100%',
-    alignItems: 'center',
-    justifyContent: 'center',
-    minHeight: 100,
-    maxHeight: 150,
-  },
-  valueContainer: {
-    width: '100%',
-    padding: 12,
-    backgroundColor: 'rgba(0,0,0,0.05)',
-    borderRadius: 12,
-    marginBottom: 16,
-    alignItems: 'center',
-  },
-  valueLabel: {
-    fontSize: 11,
-    opacity: 0.6,
-    marginBottom: 4,
-  },
-  valueText: {
-    fontSize: 14,
-    fontWeight: '600',
-    fontFamily: 'monospace',
-    textAlign: 'center',
-  },
-  infoContainer: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 8,
-    marginBottom: 16,
-    paddingHorizontal: 16,
-  },
-  infoText: {
-    fontSize: 11,
-    opacity: 0.7,
-    textAlign: 'center',
-    flex: 1,
-  },
-  previewContainer: {
-    width: '100%',
-    marginTop: 12,
-    marginBottom: 16,
-    padding: 12,
-    backgroundColor: 'rgba(0,0,0,0.03)',
-    borderRadius: 12,
-    alignItems: 'center',
-  },
-  previewLabel: {
-    fontSize: 11,
-    opacity: 0.6,
-    marginBottom: 8,
-    fontWeight: '600',
-  },
-  previewBarcodeContainer: {
-    width: '100%',
-    maxWidth: 200,
-    alignItems: 'center',
-    overflow: 'hidden',
-  },
-  previewBarcodeWrapper: {
-    width: '100%',
-    alignItems: 'center',
-    justifyContent: 'center',
-    padding: 8,
-    backgroundColor: '#ffffff',
-    borderRadius: 8,
-    marginBottom: 6,
-    overflow: 'hidden',
-    maxHeight: 80,
-  },
-  previewProductInfo: {
-    alignItems: 'center',
-    width: '100%',
-  },
-  previewProductName: {
-    fontSize: 10,
-    fontWeight: '600',
-    textAlign: 'center',
-    marginBottom: 2,
-  },
-  previewProductVolume: {
-    fontSize: 9,
-    opacity: 0.7,
-    textAlign: 'center',
-  },
-  previewNote: {
-    fontSize: 10,
-    opacity: 0.6,
-    marginTop: 8,
-    textAlign: 'center',
-    fontStyle: 'italic',
-  },
-  quantityContainer: {
-    width: '100%',
-    padding: 16,
-    backgroundColor: 'rgba(0,0,0,0.03)',
-    borderRadius: 12,
-    marginTop: 8,
-    marginBottom: 8,
-  },
-  quantityLabel: {
-    fontSize: 14,
-    fontWeight: '600',
-    marginBottom: 12,
-  },
-  quantityInputContainer: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 12,
-    marginBottom: 8,
-  },
-  quantityButton: {
-    width: 40,
-    height: 40,
-    borderRadius: 8,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  quantityInput: {
-    flex: 1,
-    height: 40,
-    borderWidth: 2,
-    borderRadius: 8,
-    paddingHorizontal: 12,
-    textAlign: 'center',
-    fontSize: 16,
-    fontWeight: '600',
-  },
-  quantityHint: {
-    fontSize: 12,
-    opacity: 0.6,
-    marginBottom: 4,
-  },
-  quantityInfo: {
-    fontSize: 11,
-    opacity: 0.7,
-    fontStyle: 'italic',
   },
   actionsContainer: {
     width: '100%',
