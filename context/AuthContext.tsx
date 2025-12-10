@@ -58,11 +58,15 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({
     metadata: { username: string; full_name: string }
   ): Promise<{ error: any }> => {
     try {
+      // Get redirect URL for email confirmation
+      const redirectUrl = `${process.env.EXPO_PUBLIC_APP_URL || 'exp://localhost:8081'}/auth/confirm-email`;
+      
       const { data: authData, error: authError } = await supabase.auth.signUp({
         email,
         password,
         options: {
           data: metadata,
+          emailRedirectTo: redirectUrl,
         },
       });
 
@@ -71,8 +75,9 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({
       }
 
       // Create user record in our users table
-      // If email confirmation is enabled, user.id might be null - we'll create the record on first login
-      if (authData.user?.id) {
+      // Only create if we have an active session (email confirmation might be disabled)
+      // If email confirmation is enabled, record on first login
+      if (authData.user?.id && authData.session) {
         const { error: userError } = await createUserRecord(
           authData.user.id,
           metadata.username,
@@ -81,8 +86,14 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({
 
         if (userError) {
           console.error('Error creating user record:', userError);
-          // Non-blocking: user can still sign in, record will be created on first login
+          // If it's an RLS error, the record will be created on first login
+          if (userError.code === '42501') {
+            console.log('User record will be created after email confirmation');
+          }
         }
+      } else if (authData.user?.id && !authData.session) {
+        // Email confirmation is required - user record will be created on first login
+        console.log('Email confirmation required. User record will be created after email confirmation.');
       }
 
       return { error: null };
