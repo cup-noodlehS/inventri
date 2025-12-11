@@ -4,7 +4,7 @@
     "slug": "stockly",
     "version": "1.0.0",
     "orientation": "portrait",
-    "icon": "./assets/images/Stockly-Logo.png",
+    "icon": "./assets/images/Stockly_logo.png",
     "scheme": "stockly",
     "userInterfaceStyle": "automatic",
     "newArchEnabled": true,
@@ -23,14 +23,11 @@
       "permissions": [
         "android.permission.CAMERA"
       ],
-      "package": "com.clarlyte.stockly",
-      "gradleProperties": {
-        "kotlinVersion": "2.0.21"
-      }
+      "package": "com.clarlyte.stockly"
     },
     "web": {
       "output": "static",
-      "favicon": "./assets/images/favicon.png"
+      "favicon": "./assets/images/Stockly_logo.png"
     },
     "plugins": [
       "expo-router",
@@ -46,7 +43,7 @@
           }
         }
       ],
-      "expo-barcode-scanner"
+      "expo-camera"
     ],
     "experiments": {
       "typedRoutes": true,
