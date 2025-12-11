@@ -1,4 +1,5 @@
 import { Ionicons } from '@expo/vector-icons';
+import { BarcodeType, CameraView, useCameraPermissions } from 'expo-camera';
 import * as Haptics from 'expo-haptics';
 import { useEffect, useState } from 'react';
 import { Alert, Modal, StyleSheet, TouchableOpacity, View } from 'react-native';
@@ -6,18 +7,6 @@ import { Alert, Modal, StyleSheet, TouchableOpacity, View } from 'react-native';
 import { ThemedText } from '@/components/themed-text';
 import { ThemedView } from '@/components/themed-view';
 import { useThemeColor } from '@/hooks/use-theme-color';
-
-// Dynamically import BarCodeScanner to handle cases where native module isn't available
-let BarCodeScanner: any = null;
-let BarCodeScannerResult: any = null;
-
-try {
-  const barcodeModule = require('expo-barcode-scanner');
-  BarCodeScanner = barcodeModule.BarCodeScanner;
-  BarCodeScannerResult = barcodeModule.BarCodeScannerResult;
-} catch (error) {
-  console.warn('expo-barcode-scanner native module not available:', error);
-}
 
 interface BarcodeScannerProps {
   visible: boolean;
@@ -27,6 +16,9 @@ interface BarcodeScannerProps {
   subtitle?: string;
 }
 
+// Map old barcode types
+const BARCODE_TYPES: BarcodeType[] = ['qr', 'code128', 'ean13', 'ean8'];
+
 export function BarcodeScanner({
   visible,
   onClose,
@@ -34,34 +26,22 @@ export function BarcodeScanner({
   title = 'Scan Barcode',
   subtitle = 'Position the barcode within the frame',
 }: BarcodeScannerProps) {
-  const [hasPermission, setHasPermission] = useState<boolean | null>(null);
   const [scanned, setScanned] = useState(false);
+  const [permission, requestPermission] = useCameraPermissions();
   const tintColor = useThemeColor({}, 'tint');
   const backgroundColor = useThemeColor({}, 'background');
 
   useEffect(() => {
-    const getBarCodeScannerPermissions = async () => {
-      if (!BarCodeScanner) {
-        setHasPermission(false);
-        return;
-      }
-
-      try {
-        const { status } = await BarCodeScanner.requestPermissionsAsync();
-        setHasPermission(status === 'granted');
-      } catch (error) {
-        console.error('Error requesting camera permission:', error);
-        setHasPermission(false);
-      }
-    };
-
     if (visible) {
-      getBarCodeScannerPermissions();
       setScanned(false);
+      // Request permission if not already granted
+      if (permission && !permission.granted) {
+        requestPermission();
+      }
     }
-  }, [visible]);
+  }, [visible, permission, requestPermission]);
 
-  const handleBarCodeScanned = ({ type, data }: any) => {
+  const handleBarCodeScanned = ({ data }: { data: string; type: string }) => {
     if (scanned) return;
 
     setScanned(true);
@@ -79,41 +59,8 @@ export function BarcodeScanner({
 
   if (!visible) return null;
 
-  // Handle case where native module is not available
-  if (!BarCodeScanner) {
-    return (
-      <Modal visible={visible} animationType="slide" onRequestClose={onClose}>
-        <ThemedView style={styles.container}>
-          <View style={styles.header}>
-            <TouchableOpacity onPress={onClose} style={styles.closeButton}>
-              <Ionicons name="close" size={28} color={tintColor} />
-            </TouchableOpacity>
-          </View>
-          <View style={styles.centerContent}>
-            <Ionicons name="camera-outline" size={64} color="#EF4444" />
-            <ThemedText style={styles.errorTitle}>Barcode Scanner Not Available</ThemedText>
-            <ThemedText style={styles.errorText}>
-              The barcode scanner requires a development build.{'\n\n'}
-              Please rebuild your app using:{'\n'}
-              <ThemedText style={{ fontWeight: 'bold', fontFamily: 'monospace' }}>
-                npx expo prebuild{'\n'}
-                npx expo run:android
-              </ThemedText>
-              {'\n\n'}Or use EAS Build to create a development build.
-            </ThemedText>
-            <TouchableOpacity
-              style={[styles.button, { backgroundColor: tintColor }]}
-              onPress={onClose}
-            >
-              <ThemedText style={styles.buttonText}>Close</ThemedText>
-            </TouchableOpacity>
-          </View>
-        </ThemedView>
-      </Modal>
-    );
-  }
-
-  if (hasPermission === null) {
+  // Handle case where permission is still loading
+  if (!permission) {
     return (
       <Modal visible={visible} animationType="slide" onRequestClose={onClose}>
         <ThemedView style={styles.container}>
@@ -130,7 +77,8 @@ export function BarcodeScanner({
     );
   }
 
-  if (hasPermission === false) {
+  // Handle case where permission is denied
+  if (!permission.granted) {
     return (
       <Modal visible={visible} animationType="slide" onRequestClose={onClose}>
         <ThemedView style={styles.container}>
@@ -148,10 +96,8 @@ export function BarcodeScanner({
             <TouchableOpacity
               style={[styles.button, { backgroundColor: tintColor }]}
               onPress={async () => {
-                if (!BarCodeScanner) return;
                 try {
-                  const { status } = await BarCodeScanner.requestPermissionsAsync();
-                  setHasPermission(status === 'granted');
+                  await requestPermission();
                 } catch (error) {
                   console.error('Error requesting permission:', error);
                   Alert.alert('Error', 'Failed to request camera permission');
@@ -186,10 +132,13 @@ export function BarcodeScanner({
 
         {/* Scanner */}
         <View style={styles.scannerContainer}>
-          <BarCodeScanner
-            onBarCodeScanned={scanned ? undefined : handleBarCodeScanned}
+          <CameraView
             style={styles.scanner}
-            barcodeTypes={['qr', 'code128', 'ean13', 'ean8']}
+            facing="back"
+            onBarcodeScanned={scanned ? undefined : handleBarCodeScanned}
+            barcodeScannerSettings={{
+              barcodeTypes: BARCODE_TYPES,
+            }}
           />
           
           {/* Overlay with scanning frame */}
@@ -360,4 +309,3 @@ const styles = StyleSheet.create({
     fontWeight: '600',
   },
 });
-

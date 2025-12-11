@@ -193,10 +193,12 @@ export default function TransactionsScreen() {
   const selectedProductData = products.find(p => p.sku === selectedProduct);
 
   const handleBarcodeScan = (scannedData: string) => {
-    // Barcode format: SKU-VOLUMEml-UNIT (e.g., "LE-MALE-65-65ml-001")
+    // Barcode format: SKU-VOLUMEml-UNIT (e.g., "LE-MALE-65-65ml-001" or "LE-MALE-65-65ml-0001")
     // Extract base barcode (SKU + volume) by removing unit number if present
-    const unitMatch = scannedData.match(/-(\d{3})$/); // Match -001, -002, etc.
-    const baseBarcode = unitMatch ? scannedData.replace(/-(\d{3})$/, '') : scannedData;
+    const unitMatch3 = scannedData.match(/-(\d{3})$/); // Match -001, -002, etc. (3 digits)
+    const unitMatch4 = scannedData.match(/-(\d{4})$/); // Match -0001, -0002, etc. (4 digits)
+    const unitMatch = unitMatch4 || unitMatch3;
+    const baseBarcode = unitMatch ? scannedData.replace(/-(\d{3,4})$/, '') : scannedData;
     
     // Try to find product by base barcode match (SKU + volume)
     const productByBarcode = products.find(
@@ -205,9 +207,14 @@ export default function TransactionsScreen() {
     
     if (productByBarcode) {
       const unitNum = unitMatch ? unitMatch[1] : null;
+      
+      // Note: Since we found the product by matching baseBarcode, it means the SKU and volume match
+      // Legacy barcode detection would require storing metadata (generation timestamp, product version)
+      // For now, we'll just show the found product
       const message = unitNum 
         ? `Selected: ${productByBarcode.name} (${productByBarcode.volume_ml}ml) - Unit #${unitNum}`
         : `Selected: ${productByBarcode.name} (${productByBarcode.volume_ml}ml)`;
+      
       setSelectedProduct(productByBarcode.sku);
       setShowProductModal(false);
       Alert.alert('Product Selected', message);
