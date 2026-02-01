@@ -1,50 +1,120 @@
-# Welcome to your Expo app 👋
+# Inventri
 
-This is an [Expo](https://expo.dev) project created with [`create-expo-app`](https://www.npmjs.com/package/create-expo-app).
+A mobile inventory management system built for perfume shops, powered by Expo (React Native) and Supabase.
 
-## Get started
+## About
 
-1. Install dependencies
+Inventri helps perfume shop owners track their inventory through deliveries and sales. It provides a real-time dashboard, product catalog management, transaction recording, and inventory reporting — all from a mobile device.
 
-   ```bash
-   npm install
-   ```
+## Features
 
-2. Start the app
+- **Dashboard** — Overview of stock levels, low-stock alerts, and inventory value
+- **Product Management** — Add, edit, and delete perfume products with SKU, volume, and pricing
+- **Transactions** — Record deliveries (stock in) and sales (stock out) with line items
+- **Barcode Scanning** — Scan product barcodes for quick lookup
+- **Barcode Generation** — Generate barcodes for products
+- **Export** — Generate inventory ledger reports for any date range
+- **Authentication** — Supabase Auth with row-level security
 
-   ```bash
-   npx expo start
-   ```
+## Tech Stack
 
-In the output, you'll find options to open the app in a
+- **Expo** ~54 / **React Native** 0.81
+- **TypeScript** ~5.9
+- **Expo Router** — File-based routing
+- **Supabase** — Auth, Postgres database, Row-Level Security, Realtime
+- **NativeWind** / **Tailwind CSS** — Styling
+- **date-fns** — Date utilities
+- **xlsx** — Spreadsheet export
 
-- [development build](https://docs.expo.dev/develop/development-builds/introduction/)
-- [Android emulator](https://docs.expo.dev/workflow/android-studio-emulator/)
-- [iOS simulator](https://docs.expo.dev/workflow/ios-simulator/)
-- [Expo Go](https://expo.dev/go), a limited sandbox for trying out app development with Expo
+## Prerequisites
 
-You can start developing by editing the files inside the **app** directory. This project uses [file-based routing](https://docs.expo.dev/router/introduction).
+- Node.js (LTS recommended)
+- npm or yarn
+- Expo CLI (`npx expo`)
+- A [Supabase](https://supabase.com) project
 
-## Get a fresh project
+## Getting Started
 
-When you're ready, run:
+### 1. Clone the repository
 
 ```bash
-npm run reset-project
+git clone <repo-url>
+cd inventri
 ```
 
-This command will move the starter code to the **app-example** directory and create a blank **app** directory where you can start developing.
+### 2. Install dependencies
 
-## Learn more
+```bash
+npm install
+```
 
-To learn more about developing your project with Expo, look at the following resources:
+### 3. Configure environment variables
 
-- [Expo documentation](https://docs.expo.dev/): Learn fundamentals, or go into advanced topics with our [guides](https://docs.expo.dev/guides).
-- [Learn Expo tutorial](https://docs.expo.dev/tutorial/introduction/): Follow a step-by-step tutorial where you'll create a project that runs on Android, iOS, and the web.
+Create a `.env` file in the project root:
 
-## Join the community
+```
+EXPO_PUBLIC_SUPABASE_URL=https://your-project.supabase.co
+EXPO_PUBLIC_SUPABASE_ANON_KEY=your-anon-key
+EXPO_PUBLIC_APP_URL=your-app-url
+```
 
-Join our community of developers creating universal apps.
+### 4. Set up the database
 
-- [Expo on GitHub](https://github.com/expo/expo): View our open source platform and contribute.
-- [Discord community](https://chat.expo.dev): Chat with Expo users and ask questions.
+Run the migration files in your Supabase SQL editor (in order):
+
+1. `supabase/migrations/20250109000000_simplified_schema.sql`
+2. `supabase/migrations/20250110000000_add_user_insert_policy.sql`
+3. `supabase/migrations/20250110000001_allow_product_deletion.sql`
+
+Then optionally run `supabase/seed.sql` for sample data.
+
+### 5. Run the app
+
+```bash
+npm start          # Start Expo dev server
+npm run android    # Android
+npm run ios        # iOS
+npm run web        # Web
+```
+
+## Project Structure
+
+```
+app/
+  (tabs)/          # Tab screens (dashboard, products, transactions, export, settings)
+  auth/            # Authentication screens
+  _layout.tsx      # Root layout
+  modal.tsx        # Modal screen
+components/        # Reusable UI components (product card, barcode scanner/generator, tabs)
+lib/
+  api/             # Supabase API functions
+  supabase.ts      # Supabase client setup
+  types.ts         # TypeScript type definitions
+  utils/           # Utility functions
+context/
+  AuthContext.tsx   # Authentication context provider
+supabase/
+  migrations/      # SQL migration files
+  seed.sql         # Seed data
+```
+
+## Database Schema
+
+| Table | Description |
+|---|---|
+| `user` | User accounts linked to Supabase Auth |
+| `product` | Perfume catalog (SKU, name, volume_ml, price, min_stock_threshold) |
+| `inventory_transaction` | Transaction headers — type is `Delivery` or `Sale` |
+| `transaction_item` | Line items per transaction (positive qty for deliveries, negative for sales) |
+| `current_stock` (view) | Real-time stock levels computed from completed transactions |
+
+## Scripts
+
+| Command | Description |
+|---|---|
+| `npm start` | Start Expo dev server |
+| `npm run android` | Start on Android |
+| `npm run ios` | Start on iOS |
+| `npm run web` | Start on web |
+| `npm run lint` | Run ESLint |
+| `npm run reset-project` | Reset to blank app directory |
