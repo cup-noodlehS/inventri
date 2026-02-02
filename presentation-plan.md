@@ -170,6 +170,8 @@
   1. **Real-time stock accuracy** — Used Supabase `current_stock` view computed from completed transactions instead of mutable stock counters
   2. **Barcode scanning on multiple devices** — Leveraged Expo Camera API with fallback handling
   3. **Scope creep / changing requirements** — Regular client check-ins and prioritized backlog kept scope manageable
+  4. **Syncing offline usage with real-time data** — Designed transactions to queue locally and reconcile with Supabase once connectivity was restored, preventing duplicate or lost entries
+  5. **Coordinating three full-stack developers on the same codebase** — Adopted a branch-per-feature workflow with mandatory code reviews on GitHub to avoid merge conflicts and maintain code quality
 
 **Layout:** 3 cards or rows, each with a challenge heading, short description, and resolution. Use a red-to-green or problem-to-solution visual pattern.
 
