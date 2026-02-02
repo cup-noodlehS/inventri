@@ -78,15 +78,30 @@
 ## Slide 4 — Project Management Approach (1:00)
 
 **Content:**
-- Methodology used (e.g., Agile/Scrum, Kanban, or hybrid)
-- Tools: GitHub Projects, group chat, Canva for design
-- Team roles and how work was divided
-- How client feedback was incorporated (e.g., client meetings, feedback loops)
+- **Methodology:** Agile-Kanban hybrid — weekly sprints with a Kanban-style task board for continuous flow
+- **Tools:**
+  - **Notion** — central workspace for task tracking (Kanban board), meeting notes, requirements documentation, and sprint planning
+  - **Lovable** — rapid prototyping; built a clickable prototype that the client approved before development began
+  - **GitHub** — version control, pull requests with code reviews, branch-per-feature workflow
+  - **Messenger** — constant async communication with the team and the client
+  - **Canva** — slide design and UI mockup collaboration
+- **Team roles (shared leadership model):**
+  | Member | Focus Areas |
+  |--------|------------|
+  | Sheldon | Full-stack development, backend architecture, database design, sprint planning |
+  | Anton | Full-stack development, frontend UI/UX, barcode scanning integration, testing |
+  | Carl | Full-stack development, API integration, reporting features, client liaison |
+  - All three rotated the **Project Manager** role each sprint to distribute leadership experience
+- **Process:**
+  - Bi-weekly standup meetings within the team to sync progress and resolve blockers
+  - Monthly client meetings to demo progress and gather formal feedback
+  - Constant client communication via Messenger for quick questions and approvals between meetings
+  - Feedback captured in Notion and prioritized using MoSCoW method (Must have, Should have, Could have, Won't have)
 
-**Layout:** Two columns — left: methodology & tools (with logos), right: team role breakdown (simple table or cards with names + responsibilities).
+**Layout:** Two columns — left: methodology overview + tool logos (Notion, Lovable, GitHub, Messenger, Canva) stacked vertically; right: team role cards (3 cards with member name + focus areas) and a small process diagram showing the flow (Prototype → Client Approval → Build → Demo → Feedback → Prioritize → Build).
 
 **Speaker script:**
-> "We followed a [methodology] approach. We used GitHub for version control and task tracking, held regular team syncs, and met with our client [frequency] to gather feedback. [Name] focused on [area], [Name] on [area], and [Name] on [area]. This kept us organized and responsive to changing requirements."
+> "For project management, we used an Agile-Kanban hybrid approach — weekly sprints tracked on a Kanban board in Notion. Before writing any code, we used Lovable to build a clickable prototype and got our client's approval first — this saved us from building the wrong thing. For communication, we held bi-weekly standup meetings as a team and monthly formal meetings with our client, but we also kept constant contact with them through Messenger for quick feedback. All three of us — Sheldon, Anton, and Carl — are full-stack developers, so we split work by feature area. We also rotated the project manager role each sprint so everyone gained leadership experience. Client feedback was logged in Notion and prioritized using the MoSCoW method to keep us focused on what mattered most."
 
 ---
 
